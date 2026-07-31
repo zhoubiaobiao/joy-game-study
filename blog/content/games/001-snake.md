@@ -20,4 +20,4 @@ draft: false
 - 蛇身渐变色，头部亮绿色
 - 撞墙或撞到自己游戏结束
 
-> 🎮 [点击试玩](/joy-game-study/games/001-snake/)
+> 🎮 [点击试玩](/joy-game-study/play/001-snake/)
