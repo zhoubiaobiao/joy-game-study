@@ -1,0 +1,33 @@
+baseURL = 'https://zhoubiaobiao.github.io/joy-game-study/'
+locale = 'zh-cn'
+title = 'Joy Game Studio - 我的游戏开发日志'
+theme = 'PaperMod'
+
+[params]
+  author = 'zhoubiaobiao'
+  description = '通过开发100个小游戏来学习编程'
+  ShowReadingTime = false
+  ShowShareButtons = false
+  ShowPostNavLinks = true
+
+[params.homeInfoParams]
+  Title = '🎮 Joy Game Studio'
+  Content = '开发100个小游戏，记录每一步成长。'
+
+[params.profileMode]
+  enabled = false
+
+[[menu.main]]
+  name = '🏠 首页'
+  url = '/'
+  weight = 1
+
+[[menu.main]]
+  name = '🎯 游戏列表'
+  url = '/games/'
+  weight = 2
+
+[[menu.main]]
+  name = '📝 博客'
+  url = '/posts/'
+  weight = 3

@@ -1,2 +1,13 @@
+# --- Hugo ---
+blog/public/
+blog/resources/
+blog/.hugo_build.lock
+
+# --- System ---
+.DS_Store
+Thumbs.db
+*.tmp
+
+# --- IDE ---
 .vscode/
 .idea/
