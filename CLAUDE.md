@@ -20,6 +20,7 @@
 │   │   └── deploy/        ← "部署" — 推送并触发部署
 │   └── memory/
 │       └── progress.md    ← 进度追踪
+│   └── conversation-log.md ← 对话记录（重大决策回顾）
 ├── .github/workflows/     ← CI/CD 自动部署
 └── CLAUDE.md              ← 本文件（项目指令）
 ```
@@ -39,9 +40,9 @@
 - [ ] 阶段四：迭代 — 完成剩余 90 个游戏
 
 ## 当前进度
-**位置：阶段一（基础设施），即将完成**
+**位置：阶段一 ✅ 完成，准备进入阶段二**
 
-> 详细进度见 `.claude/memory/progress.md`。
+> 详细进度见 `.claude/memory/progress.md`，所有决策记录见 `.claude/conversation-log.md`。
 
 ## 如何继续工作
 
