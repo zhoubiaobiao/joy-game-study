@@ -2,7 +2,7 @@
 <html lang="zh-cn">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>002 - 数独</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -10,63 +10,60 @@
             background: #1a1a2e; color: #eee;
             font-family: 'Segoe UI', sans-serif;
             display: flex; flex-direction: column; align-items: center;
-            min-height: 100vh; padding: 16px;
-            user-select: none;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
         }
-        h1 { margin-bottom: 4px; color: #00d4ff; font-size: 1.6em; }
-        .subtitle { color: #888; font-size: 0.9em; margin-bottom: 12px; }
+        h1 { color: #00d4ff; font-size: clamp(1.2em, 4vw, 1.6em); margin-bottom: 2px; }
+        .subtitle { color: #888; font-size: 0.85em; margin-bottom: 8px; }
 
-        /* Difficulty buttons */
-        .diff-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; justify-content: center; }
+        .diff-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; justify-content: center; }
         .diff-btn {
-            padding: 8px 20px; border: 2px solid #333; background: transparent;
-            color: #aaa; border-radius: 8px; cursor: pointer; font-size: 0.95em;
-            transition: all 0.2s;
+            padding: 6px 12px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
         }
-        .diff-btn:hover { border-color: #00d4ff; color: #00d4ff; }
         .diff-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
 
-        /* Board */
-        .board-wrap { position: relative; margin-bottom: 12px; }
-        canvas { border: 3px solid #555; border-radius: 4px; cursor: pointer; }
+        .canvas-wrap { position: relative; width: 100%; max-width: 450px; aspect-ratio: 1; }
+        canvas { width: 100%; height: 100%; display: block; cursor: pointer; border: 3px solid #555; border-radius: 4px; touch-action: manipulation; }
 
-        /* Controls */
-        .controls { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; justify-content: center; }
-        .num-btn {
-            width: 44px; height: 44px; border: 2px solid #444; background: #16213e;
-            color: #ddd; border-radius: 8px; cursor: pointer; font-size: 1.2em;
-            font-weight: bold; transition: all 0.15s;
-        }
-        .num-btn:hover { background: #00d4ff33; border-color: #00d4ff; }
-        .num-btn.used { opacity: 0.3; }
-        .action-btn {
-            padding: 8px 18px; border: 2px solid #444; background: transparent;
-            color: #ccc; border-radius: 8px; cursor: pointer; font-size: 0.9em;
-            transition: all 0.15s;
-        }
-        .action-btn:hover { border-color: #00d4ff; color: #00d4ff; }
-        .action-btn.danger:hover { border-color: #ff4444; color: #ff4444; }
-
-        /* Status bar */
-        .status { display: flex; gap: 20px; align-items: center; color: #888; font-size: 0.9em; margin-bottom: 8px; }
-        .timer { color: #ffd700; font-family: 'Consolas', monospace; font-size: 1.1em; }
+        .status { display: flex; gap: 16px; color: #888; font-size: 0.85em; margin: 6px 0; }
+        .timer { color: #ffd700; font-family: 'Consolas', monospace; }
         .mistakes { color: #ff4455; }
 
-        /* Messages */
-        .message {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.92); padding: 30px 50px; border-radius: 12px;
-            text-align: center; display: none; z-index: 10; min-width: 280px;
+        .controls { display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; justify-content: center; }
+        .num-btn {
+            width: clamp(32px, 10vw, 44px); height: clamp(32px, 10vw, 44px);
+            border: 2px solid #444; background: #16213e; color: #ddd;
+            border-radius: 8px; cursor: pointer;
+            font-size: clamp(1em, 3.5vw, 1.2em); font-weight: bold;
+            -webkit-tap-highlight-color: transparent;
         }
-        .message h2 { margin-bottom: 10px; font-size: 2em; }
-        .message.win h2 { color: #00ff88; }
-        .message p { color: #ccc; margin-bottom: 20px; font-size: 1.1em; }
-        .message button {
-            padding: 10px 30px; font-size: 1.1em;
+        .num-btn:active { background: #00d4ff33; border-color: #00d4ff; }
+        .num-btn.used { opacity: 0.3; }
+        .action-btn {
+            padding: 6px 14px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .action-btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .tips { color: #555; font-size: 0.75em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 36px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; }
+        .overlay.win h2 { color: #00ff88; }
+        .overlay p { color: #ccc; margin-bottom: 16px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
             background: #00d4ff; color: #1a1a2e; border: none;
             border-radius: 6px; cursor: pointer; font-weight: bold;
         }
-        .tips { color: #555; font-size: 0.8em; margin-top: 4px; text-align: center; }
     </style>
 </head>
 <body>
@@ -74,388 +71,237 @@
     <p class="subtitle">游戏 #002</p>
 
     <div class="diff-row">
-        <button class="diff-btn active" data-diff="easy">📗 小学 (简单)</button>
-        <button class="diff-btn" data-diff="medium">📘 中学 (中等)</button>
-        <button class="diff-btn" data-diff="hard">📕 成年人 (困难)</button>
+        <button class="diff-btn active" data-diff="easy">📗 小学</button>
+        <button class="diff-btn" data-diff="medium">📘 中学</button>
+        <button class="diff-btn" data-diff="hard">📕 成年人</button>
     </div>
 
     <div class="status">
         <span>⏱ <span class="timer" id="timer">00:00</span></span>
-        <span>❌ 错误：<span class="mistakes" id="mistakes">0/3</span></span>
+        <span>❌ <span class="mistakes" id="mistakes">0/3</span></span>
     </div>
 
-    <div class="board-wrap">
-        <canvas id="board" width="450" height="450"></canvas>
-    </div>
+    <div class="canvas-wrap"><canvas id="board"></canvas></div>
 
     <div class="controls">
-        <button class="num-btn" data-num="1">1</button>
-        <button class="num-btn" data-num="2">2</button>
-        <button class="num-btn" data-num="3">3</button>
-        <button class="num-btn" data-num="4">4</button>
-        <button class="num-btn" data-num="5">5</button>
-        <button class="num-btn" data-num="6">6</button>
-        <button class="num-btn" data-num="7">7</button>
-        <button class="num-btn" data-num="8">8</button>
+        <button class="num-btn" data-num="1">1</button><button class="num-btn" data-num="2">2</button>
+        <button class="num-btn" data-num="3">3</button><button class="num-btn" data-num="4">4</button>
+        <button class="num-btn" data-num="5">5</button><button class="num-btn" data-num="6">6</button>
+        <button class="num-btn" data-num="7">7</button><button class="num-btn" data-num="8">8</button>
         <button class="num-btn" data-num="9">9</button>
     </div>
     <div class="controls">
-        <button class="action-btn danger" id="erase">🧹 擦除</button>
+        <button class="action-btn" id="erase">🧹 擦除</button>
         <button class="action-btn" id="hint">💡 提示</button>
-        <button class="action-btn" id="newGame">🔄 新游戏</button>
+        <button class="action-btn" id="newGame">🔄 新局</button>
     </div>
-    <p class="tips">点击格子后用数字键或按钮填入 | 删除键擦除</p>
+    <p class="tips">选格子 → 点数字按钮 | 数字键也可输入</p>
 
-    <div class="message win" id="winMsg">
-        <h2>🎉 恭喜完成！</h2>
+    <div class="overlay win" id="winMsg">
+        <h2>🎉 恭喜！</h2>
         <p>用时：<strong id="winTime">00:00</strong></p>
-        <button onclick="newGame()">🔄 再来一局</button>
+        <button onclick="newGame()">🔄 再来</button>
     </div>
 
     <script>
         const canvas = document.getElementById('board');
         const ctx = canvas.getContext('2d');
-        const SIZE = 450;
-        const CELL = SIZE / 9;
+        let SIZE, CELL;
 
-        let solution = [];      // 9x9 完整答案
-        let board = [];         // 9x9 当前状态 (0 = 空格)
-        let given = [];         // 9x9 哪些是题目给定的
+        let solution = [], board = [], given = [];
         let selectedR = -1, selectedC = -1;
-        let mistakes = 0;
-        let timerSec = 0, timerInterval = null;
-        let difficulty = 'easy';
-
-        // Difficulty config: cells to GIVE (i.e., keep visible)
+        let mistakes = 0, timerSec = 0, timerInterval = null, difficulty = 'easy';
         const DIFF = { easy: 40, medium: 31, hard: 24 };
-        const MAX_MISTAKES = 3;
 
-        // UI elements
-        const elTimer = document.getElementById('timer');
-        const elMistakes = document.getElementById('mistakes');
-        const elWinMsg = document.getElementById('winMsg');
-        const elWinTime = document.getElementById('winTime');
+        function resizeCanvas() {
+            const wrap = canvas.parentElement;
+            SIZE = Math.min(wrap.clientWidth, 450);
+            canvas.width = SIZE; canvas.height = SIZE;
+            CELL = SIZE / 9;
+        }
 
-        // --- Sudoku Generator ---
+        // --- Generator ---
         function shuffle(arr) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
-
         function isValid(grid, row, col, num) {
             for (let c = 0; c < 9; c++) if (grid[row][c] === num) return false;
             for (let r = 0; r < 9; r++) if (grid[r][col] === num) return false;
             const br = Math.floor(row / 3) * 3, bc = Math.floor(col / 3) * 3;
-            for (let r = br; r < br + 3; r++)
-                for (let c = bc; c < bc + 3; c++)
-                    if (grid[r][c] === num) return false;
+            for (let r = br; r < br + 3; r++) for (let c = bc; c < bc + 3; c++) if (grid[r][c] === num) return false;
             return true;
         }
-
         function solveGrid(grid) {
-            for (let r = 0; r < 9; r++) {
-                for (let c = 0; c < 9; c++) {
-                    if (grid[r][c] === 0) {
-                        const nums = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-                        for (const num of nums) {
-                            if (isValid(grid, r, c, num)) {
-                                grid[r][c] = num;
-                                if (solveGrid(grid)) return true;
-                                grid[r][c] = 0;
-                            }
-                        }
-                        return false;
+            for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
+                if (grid[r][c] === 0) {
+                    for (const num of shuffle([1,2,3,4,5,6,7,8,9])) {
+                        if (isValid(grid, r, c, num)) { grid[r][c] = num; if (solveGrid(grid)) return true; grid[r][c] = 0; }
                     }
+                    return false;
                 }
             }
             return true;
         }
-
         function generateSolution() {
-            const grid = Array.from({ length: 9 }, () => Array(9).fill(0));
-            // Fill diagonal boxes first (independent)
+            const grid = Array.from({length:9}, () => Array(9).fill(0));
             for (let box = 0; box < 3; box++) {
-                const nums = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-                for (let i = 0; i < 9; i++) {
-                    grid[box * 3 + Math.floor(i / 3)][box * 3 + (i % 3)] = nums[i];
-                }
+                const nums = shuffle([1,2,3,4,5,6,7,8,9]);
+                for (let i = 0; i < 9; i++) grid[box*3+Math.floor(i/3)][box*3+(i%3)] = nums[i];
             }
             solveGrid(grid);
             return grid;
         }
-
         function countSolutions(grid, limit) {
             let count = 0;
             function solve(g) {
                 if (count >= limit) return;
-                for (let r = 0; r < 9; r++) {
-                    for (let c = 0; c < 9; c++) {
-                        if (g[r][c] === 0) {
-                            for (let num = 1; num <= 9; num++) {
-                                if (isValid(g, r, c, num)) {
-                                    g[r][c] = num;
-                                    solve(g);
-                                    g[r][c] = 0;
-                                    if (count >= limit) return;
-                                }
-                            }
-                            return;
-                        }
+                for (let r=0; r<9; r++) for (let c=0; c<9; c++) {
+                    if (g[r][c] === 0) {
+                        for (let num=1; num<=9; num++) if (isValid(g,r,c,num)) { g[r][c]=num; solve(g); g[r][c]=0; if (count>=limit) return; }
+                        return;
                     }
                 }
                 count++;
             }
-            solve(grid.map(r => [...r]));
+            solve(grid.map(r=>[...r]));
             return count;
         }
-
         function generatePuzzle(sol, givenCount) {
-            const puzzle = sol.map(r => [...r]);
-            const positions = shuffle(Array.from({ length: 81 }, (_, i) => [Math.floor(i / 9), i % 9]));
+            const puzzle = sol.map(r=>[...r]);
+            const positions = shuffle(Array.from({length:81}, (_,i) => [Math.floor(i/9), i%9]));
             let removed = 0;
-            const target = 81 - givenCount;
-
-            for (const [r, c] of positions) {
-                if (removed >= target) break;
+            for (const [r,c] of positions) {
+                if (removed >= 81 - givenCount) break;
                 const backup = puzzle[r][c];
                 puzzle[r][c] = 0;
-                if (countSolutions(puzzle, 2) === 1) {
-                    removed++;
-                } else {
-                    puzzle[r][c] = backup; // 会导致多解，恢复
-                }
+                if (countSolutions(puzzle, 2) === 1) removed++;
+                else puzzle[r][c] = backup;
             }
             return puzzle;
         }
 
-        // --- Game Logic ---
         function newGame() {
             stopTimer();
+            resizeCanvas();
             solution = generateSolution();
             board = generatePuzzle(solution, DIFF[difficulty]);
-            given = board.map(row => row.map(v => v !== 0));
-            selectedR = -1; selectedC = -1;
-            mistakes = 0;
-            timerSec = 0;
-            elMistakes.textContent = '0/3';
-            elTimer.textContent = '00:00';
-            elWinMsg.style.display = 'none';
-            startTimer();
-            updateNumButtons();
-            draw();
+            given = board.map(r=>r.map(v=>v!==0));
+            selectedR = selectedC = -1; mistakes = 0; timerSec = 0;
+            document.getElementById('mistakes').textContent = '0/3';
+            document.getElementById('timer').textContent = '00:00';
+            document.getElementById('winMsg').style.display = 'none';
+            startTimer(); updateNumButtons(); draw();
         }
 
-        function startTimer() {
-            stopTimer();
-            timerSec = 0;
-            elTimer.textContent = '00:00';
-            timerInterval = setInterval(() => {
-                timerSec++;
-                const m = Math.floor(timerSec / 60).toString().padStart(2, '0');
-                const s = (timerSec % 60).toString().padStart(2, '0');
-                elTimer.textContent = `${m}:${s}`;
-            }, 1000);
-        }
-
-        function stopTimer() {
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-        }
+        function startTimer() { stopTimer(); timerInterval = setInterval(() => { timerSec++; const m=Math.floor(timerSec/60).toString().padStart(2,'0'), s=(timerSec%60).toString().padStart(2,'0'); document.getElementById('timer').textContent = `${m}:${s}`; }, 1000); }
+        function stopTimer() { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } }
 
         function placeNumber(num) {
-            if (selectedR === -1 || selectedC === -1) return;
-            if (given[selectedR][selectedC]) return; // 题目格子不能改
-            if (num === 0) {
-                board[selectedR][selectedC] = 0;
-                updateNumButtons();
-                draw();
-                return;
-            }
+            if (selectedR === -1 || given[selectedR][selectedC]) return;
+            if (num === 0) { board[selectedR][selectedC] = 0; updateNumButtons(); draw(); return; }
             board[selectedR][selectedC] = num;
-            // 检查冲突
-            if (num !== solution[selectedR][selectedC]) {
-                mistakes++;
-                elMistakes.textContent = `${mistakes}/${MAX_MISTAKES}`;
-                if (mistakes >= MAX_MISTAKES) {
-                    stopTimer();
-                    revealAllConflicts();
-                }
-            }
-            updateNumButtons();
-            draw();
-            checkWin();
-        }
-
-        function revealAllConflicts() {
-            // 简单方案：显示失败消息
-            setTimeout(() => {
-                alert(`游戏结束！你犯了 ${MAX_MISTAKES} 次错误。\n点击"新游戏"重新开始。`);
-            }, 100);
+            if (num !== solution[selectedR][selectedC]) { mistakes++; document.getElementById('mistakes').textContent = `${mistakes}/3`; if (mistakes >= 3) stopTimer(); }
+            updateNumButtons(); draw(); checkWin();
         }
 
         function checkWin() {
-            for (let r = 0; r < 9; r++)
-                for (let c = 0; c < 9; c++)
-                    if (board[r][c] !== solution[r][c]) return;
-            // 赢了！
-            stopTimer();
-            elWinTime.textContent = elTimer.textContent;
-            elWinMsg.style.display = 'block';
-            selectedR = -1; selectedC = -1;
-            draw();
+            for (let r=0; r<9; r++) for (let c=0; c<9; c++) if (board[r][c] !== solution[r][c]) return;
+            stopTimer(); document.getElementById('winTime').textContent = document.getElementById('timer').textContent;
+            document.getElementById('winMsg').style.display = 'block'; selectedR = selectedC = -1; draw();
         }
 
         function giveHint() {
-            if (selectedR === -1 || selectedC === -1) return;
-            if (given[selectedR][selectedC]) return;
-            if (board[selectedR][selectedC] === solution[selectedR][selectedC]) return; // 已正确
+            if (selectedR===-1 || given[selectedR][selectedC] || board[selectedR][selectedC]===solution[selectedR][selectedC]) return;
             board[selectedR][selectedC] = solution[selectedR][selectedC];
-            given[selectedR][selectedC] = true; // 提示过的不能再改
-            updateNumButtons();
-            draw();
-            checkWin();
+            given[selectedR][selectedC] = true; updateNumButtons(); draw(); checkWin();
         }
 
-        // --- Drawing ---
         function draw() {
-            const w = SIZE;
-            ctx.clearRect(0, 0, w, w);
+            ctx.clearRect(0, 0, SIZE, SIZE);
+            ctx.fillStyle = '#16213e'; ctx.fillRect(0, 0, SIZE, SIZE);
 
-            // Background
-            ctx.fillStyle = '#16213e';
-            ctx.fillRect(0, 0, w, w);
-
-            // Highlight selected cell
-            if (selectedR >= 0 && selectedC >= 0) {
-                ctx.fillStyle = '#00d4ff22';
-                ctx.fillRect(selectedC * CELL, selectedR * CELL, CELL, CELL);
+            if (selectedR>=0 && selectedC>=0) {
+                ctx.fillStyle = '#00d4ff22'; ctx.fillRect(selectedC*CELL, selectedR*CELL, CELL, CELL);
+                if (board[selectedR][selectedC] !== 0) {
+                    const num = board[selectedR][selectedC];
+                    for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (board[r][c]===num && !(r===selectedR&&c===selectedC)) { ctx.fillStyle = '#00d4ff18'; ctx.fillRect(c*CELL, r*CELL, CELL, CELL); }
+                }
+                ctx.fillStyle = '#ffffff08';
+                for (let i=0; i<9; i++) { ctx.fillRect(i*CELL, selectedR*CELL, CELL, CELL); ctx.fillRect(selectedC*CELL, i*CELL, CELL, CELL); }
+                const br=Math.floor(selectedR/3)*3, bc=Math.floor(selectedC/3)*3;
+                ctx.fillRect(bc*CELL, br*CELL, CELL*3, CELL*3);
             }
 
-            // Highlight cells with same number as selected
-            if (selectedR >= 0 && selectedC >= 0 && board[selectedR][selectedC] !== 0) {
-                const num = board[selectedR][selectedC];
-                for (let r = 0; r < 9; r++) {
-                    for (let c = 0; c < 9; c++) {
-                        if (r === selectedR && c === selectedC) continue;
-                        if (board[r][c] === num) {
-                            ctx.fillStyle = '#00d4ff18';
-                            ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-                        }
-                    }
-                }
-                // Highlight same row/col/box
-                ctx.fillStyle = '#ffffff05';
-                for (let i = 0; i < 9; i++) {
-                    ctx.fillRect(i * CELL, selectedR * CELL, CELL, CELL);
-                    ctx.fillRect(selectedC * CELL, i * CELL, CELL, CELL);
-                }
-                const br = Math.floor(selectedR / 3) * 3, bc = Math.floor(selectedC / 3) * 3;
-                ctx.fillRect(bc * CELL, br * CELL, CELL * 3, CELL * 3);
+            for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
+                if (board[r][c]!==0 && !given[r][c] && board[r][c]!==solution[r][c]) { ctx.fillStyle = '#ff444433'; ctx.fillRect(c*CELL, r*CELL, CELL, CELL); }
             }
 
-            // Highlight conflicts (cells that don't match solution, for non-given cells)
-            for (let r = 0; r < 9; r++) {
-                for (let c = 0; c < 9; c++) {
-                    if (board[r][c] !== 0 && !given[r][c] && board[r][c] !== solution[r][c]) {
-                        ctx.fillStyle = '#ff444433';
-                        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-                    }
-                }
-            }
-
-            // Draw 3x3 boxes
             ctx.strokeStyle = '#555';
-            ctx.lineWidth = 2;
-            for (let i = 0; i <= 9; i++) {
-                const lw = (i % 3 === 0) ? 2.5 : 1;
-                ctx.lineWidth = lw;
-                ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, w); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(w, i * CELL); ctx.stroke();
+            for (let i=0; i<=9; i++) {
+                ctx.lineWidth = (i%3===0) ? 2.5 : 1;
+                ctx.beginPath(); ctx.moveTo(i*CELL, 0); ctx.lineTo(i*CELL, SIZE); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i*CELL); ctx.lineTo(SIZE, i*CELL); ctx.stroke();
             }
 
-            // Draw numbers
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            for (let r = 0; r < 9; r++) {
-                for (let c = 0; c < 9; c++) {
-                    if (board[r][c] === 0) continue;
-                    const x = c * CELL + CELL / 2;
-                    const y = r * CELL + CELL / 2;
-                    if (given[r][c]) {
-                        ctx.fillStyle = '#eee';
-                        ctx.font = 'bold 24px "Segoe UI"';
-                    } else if (board[r][c] !== solution[r][c]) {
-                        ctx.fillStyle = '#ff5555';
-                        ctx.font = '22px "Segoe UI"';
-                    } else {
-                        ctx.fillStyle = '#00d4ff';
-                        ctx.font = '22px "Segoe UI"';
-                    }
-                    ctx.fillText(board[r][c], x, y);
-                }
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
+                if (board[r][c]===0) continue;
+                const x=c*CELL+CELL/2, y=r*CELL+CELL/2;
+                if (given[r][c]) { ctx.fillStyle = '#eee'; ctx.font = `bold ${Math.floor(CELL*0.55)}px "Segoe UI"`; }
+                else if (board[r][c]!==solution[r][c]) { ctx.fillStyle = '#ff5555'; ctx.font = `${Math.floor(CELL*0.5)}px "Segoe UI"`; }
+                else { ctx.fillStyle = '#00d4ff'; ctx.font = `${Math.floor(CELL*0.5)}px "Segoe UI"`; }
+                ctx.fillText(board[r][c], x, y);
             }
+            ctx.textAlign = 'start';
         }
 
         function updateNumButtons() {
-            if (selectedR === -1 || selectedC === -1) {
-                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('used'));
-                return;
-            }
-            const num = board[selectedR][selectedC];
             document.querySelectorAll('.num-btn').forEach(b => {
+                if (selectedR===-1) { b.classList.remove('used'); return; }
                 const n = parseInt(b.dataset.num);
-                // Count how many times n appears in board
                 let count = 0;
-                for (let r = 0; r < 9; r++)
-                    for (let c = 0; c < 9; c++)
-                        if (board[r][c] === n) count++;
+                for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (board[r][c]===n) count++;
                 b.classList.toggle('used', count >= 9);
             });
         }
 
-        // --- Event Handling ---
         canvas.addEventListener('click', e => {
             const rect = canvas.getBoundingClientRect();
             const scale = SIZE / rect.width;
-            const x = (e.clientX - rect.left) * scale;
-            const y = (e.clientY - rect.top) * scale;
-            const c = Math.floor(x / CELL);
-            const r = Math.floor(y / CELL);
-            if (r >= 0 && r < 9 && c >= 0 && c < 9) {
-                selectedR = r;
-                selectedC = c;
-                updateNumButtons();
-                draw();
-            }
+            const c = Math.floor((e.clientX - rect.left) * scale / CELL);
+            const r = Math.floor((e.clientY - rect.top) * scale / CELL);
+            if (r>=0&&r<9&&c>=0&&c<9) { selectedR=r; selectedC=c; updateNumButtons(); draw(); }
         });
 
-        document.querySelectorAll('.num-btn').forEach(btn => {
-            btn.addEventListener('click', () => placeNumber(parseInt(btn.dataset.num)));
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const scale = SIZE / rect.width;
+            const touch = e.touches[0];
+            const c = Math.floor((touch.clientX - rect.left) * scale / CELL);
+            const r = Math.floor((touch.clientY - rect.top) * scale / CELL);
+            if (r>=0&&r<9&&c>=0&&c<9) { selectedR=r; selectedC=c; updateNumButtons(); draw(); }
         });
 
+        document.querySelectorAll('.num-btn').forEach(b => b.addEventListener('click', () => placeNumber(parseInt(b.dataset.num))));
         document.getElementById('erase').addEventListener('click', () => placeNumber(0));
-
         document.getElementById('hint').addEventListener('click', giveHint);
-
         document.getElementById('newGame').addEventListener('click', newGame);
 
-        document.querySelectorAll('.diff-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                difficulty = btn.dataset.diff;
-                newGame();
-            });
-        });
+        document.querySelectorAll('.diff-btn').forEach(b => b.addEventListener('click', () => {
+            document.querySelectorAll('.diff-btn').forEach(x => x.classList.remove('active'));
+            b.classList.add('active'); difficulty = b.dataset.diff; newGame();
+        }));
 
         document.addEventListener('keydown', e => {
-            const key = e.key;
-            if (key >= '1' && key <= '9') { placeNumber(parseInt(key)); e.preventDefault(); }
-            if (key === 'Backspace' || key === 'Delete' || key === '0') { placeNumber(0); e.preventDefault(); }
-            if (key === 'ArrowUp' && selectedR > 0) { selectedR--; updateNumButtons(); draw(); e.preventDefault(); }
-            if (key === 'ArrowDown' && selectedR < 8) { selectedR++; updateNumButtons(); draw(); e.preventDefault(); }
-            if (key === 'ArrowLeft' && selectedC > 0) { selectedC--; updateNumButtons(); draw(); e.preventDefault(); }
-            if (key === 'ArrowRight' && selectedC < 8) { selectedC++; updateNumButtons(); draw(); e.preventDefault(); }
-            if (key === 'h' || key === 'H') { giveHint(); e.preventDefault(); }
+            if (e.key>='1'&&e.key<='9') { placeNumber(parseInt(e.key)); e.preventDefault(); }
+            if (e.key==='Backspace'||e.key==='Delete'||e.key==='0') { placeNumber(0); e.preventDefault(); }
+            if (e.key==='ArrowUp'&&selectedR>0) { selectedR--; updateNumButtons(); draw(); e.preventDefault(); }
+            if (e.key==='ArrowDown'&&selectedR<8) { selectedR++; updateNumButtons(); draw(); e.preventDefault(); }
+            if (e.key==='ArrowLeft'&&selectedC>0) { selectedC--; updateNumButtons(); draw(); e.preventDefault(); }
+            if (e.key==='ArrowRight'&&selectedC<8) { selectedC++; updateNumButtons(); draw(); e.preventDefault(); }
+            if (e.key==='h'||e.key==='H') { giveHint(); e.preventDefault(); }
         });
 
-        // --- Init ---
+        window.addEventListener('resize', () => { resizeCanvas(); draw(); });
         newGame();
     </script>
 </body>
