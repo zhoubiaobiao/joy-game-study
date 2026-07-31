@@ -14,15 +14,12 @@
             user-select: none; -webkit-user-select: none;
         }
         h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
-        .subtitle { color: #888; font-size: 0.8em; margin-bottom: 6px; }
 
         .game-area {
             display: flex; gap: 10px; align-items: flex-start;
             width: 100%; max-width: 450px; justify-content: center;
         }
-
         canvas { border: 2px solid #333; border-radius: 4px; display: block; }
-
         .right-panel {
             display: flex; flex-direction: column; gap: 8px; min-width: 80px;
         }
@@ -55,7 +52,22 @@
         .dpad-btn:active { background: #00d4ff33; border-color: #00d4ff; }
         .dpad-btn.wide { width: 100px; font-size: 0.8em; }
 
-        .tips { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .howto {
+            background: #16213e; border: 1px solid #333; border-radius: 10px;
+            padding: 12px 18px; margin-top: 10px; width: 100%; max-width: 450px;
+        }
+        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
+        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
+        .howto ul li::before { content: '▸ '; color: #00d4ff; }
+
+        .nav { display: flex; gap: 8px; margin-top: 10px; width: 100%; max-width: 450px; justify-content: space-between; }
+        .nav a {
+            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
+            color: #ccc; text-decoration: none; font-size: 0.9em;
+            transition: all 0.15s; white-space: nowrap;
+        }
+        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
+        .nav a.disabled { opacity: 0.3; pointer-events: none; }
 
         .overlay {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -71,14 +83,11 @@
             border-radius: 6px; cursor: pointer; font-weight: bold;
         }
 
-        @media (max-width: 500px), (hover: none) {
-            .mobile-btns { display: block; }
-        }
+        @media (max-width: 500px), (hover: none) { .mobile-btns { display: block; } }
     </style>
 </head>
 <body>
-    <h1>🧱 俄罗斯方块</h1>
-    <p class="subtitle">游戏 #004</p>
+    <h1>🧱 俄罗斯方块 — #004</h1>
 
     <div class="game-area">
         <canvas id="board"></canvas>
@@ -96,9 +105,7 @@
     </div>
 
     <div class="mobile-btns">
-        <div class="dpad-row">
-            <button class="dpad-btn" id="mbUp">▲</button>
-        </div>
+        <div class="dpad-row"><button class="dpad-btn" id="mbUp">▲</button></div>
         <div class="dpad-row">
             <button class="dpad-btn" id="mbLeft">◀</button>
             <button class="dpad-btn" id="mbDown">▼</button>
@@ -110,7 +117,21 @@
         </div>
     </div>
 
-    <p class="tips">⬅➡移动 | ⬆旋转 | ⬇软降 | 空格硬降 | P暂停</p>
+    <div class="howto">
+        <h3>📖 玩法说明</h3>
+        <ul>
+            <li>移动和旋转下落的方块，填满整行即可消除</li>
+            <li>⬅➡ 移动 | ⬆ 旋转 | ⬇ 加速下落 | 空格 直接落底</li>
+            <li>同时消除多行有额外加分（最高 Tetris ×4 奖励）</li>
+            <li>每消 10 行升一级，方块下落速度加快</li>
+            <li>方块堆到顶部游戏结束，挑战你的最高分！</li>
+        </ul>
+    </div>
+
+    <div class="nav">
+        <a href="/joy-game-study/play/003-2048/">◀ 上一个：🔢 2048</a>
+        <a class="disabled" href="#">待开发 ▶</a>
+    </div>
 
     <div class="overlay lose" id="loseOverlay">
         <h2>💥 游戏结束</h2>
@@ -138,7 +159,7 @@
         const NAMES = Object.keys(PIECES);
 
         function resizeCanvas() {
-            const maxH = Math.min(window.innerHeight * 0.65, 600);
+            const maxH = Math.min(window.innerHeight * 0.55, 600);
             const maxW = Math.min(window.innerWidth * 0.55, 300);
             CELL = Math.floor(Math.min(maxW / COLS, maxH / ROWS));
             canvas.width = CELL * COLS; canvas.height = CELL * ROWS;
@@ -194,7 +215,6 @@
             c.fillStyle='rgba(255,255,255,0.2)'; c.fillRect(x+1,y+1,CELL-2,3); c.fillRect(x+1,y+1,3,CELL-2);
             c.fillStyle='rgba(0,0,0,0.2)'; c.fillRect(x+1,y+CELL-4,CELL-2,3); c.fillRect(x+CELL-4,y+1,3,CELL-2);
         }
-
         function drawGhost(c, x, y, color) { c.strokeStyle=color; c.lineWidth=1.5; c.globalAlpha=0.35; c.strokeRect(x+2,y+2,CELL-4,CELL-4); c.globalAlpha=1; }
 
         function draw() {
@@ -237,14 +257,12 @@
 
         document.getElementById('newBtn').addEventListener('click', newGame);
         document.getElementById('pauseBtn').addEventListener('click', togglePause);
-
-        // Mobile buttons
-        document.getElementById('mbLeft').addEventListener('click', ()=>{if(!gameOver&&!paused){moveLeft();draw();}});
-        document.getElementById('mbRight').addEventListener('click', ()=>{if(!gameOver&&!paused){moveRight();draw();}});
-        document.getElementById('mbDown').addEventListener('click', ()=>{if(!gameOver&&!paused){softDrop();draw();}});
-        document.getElementById('mbUp').addEventListener('click', ()=>{if(!gameOver&&!paused){rotate();draw();}});
-        document.getElementById('mbDrop').addEventListener('click', ()=>{if(!gameOver&&!paused) hardDrop();});
-        document.getElementById('mbRotate').addEventListener('click', ()=>{if(!gameOver&&!paused){rotate();draw();}});
+        document.getElementById('mbLeft').addEventListener('click',()=>{if(!gameOver&&!paused){moveLeft();draw();}});
+        document.getElementById('mbRight').addEventListener('click',()=>{if(!gameOver&&!paused){moveRight();draw();}});
+        document.getElementById('mbDown').addEventListener('click',()=>{if(!gameOver&&!paused){softDrop();draw();}});
+        document.getElementById('mbUp').addEventListener('click',()=>{if(!gameOver&&!paused){rotate();draw();}});
+        document.getElementById('mbDrop').addEventListener('click',()=>{if(!gameOver&&!paused) hardDrop();});
+        document.getElementById('mbRotate').addEventListener('click',()=>{if(!gameOver&&!paused){rotate();draw();}});
 
         function newGame() {
             clearInterval(dropInterval); board=Array.from({length:ROWS},()=>Array(COLS).fill(0));
@@ -253,7 +271,7 @@
             document.getElementById('pauseBtn').textContent='⏯ 暂停'; updateUI(); spawn(); resetDrop(); draw();
         }
 
-        window.addEventListener('resize', ()=>{resizeCanvas(); draw(); drawNext();});
+        window.addEventListener('resize',()=>{resizeCanvas();draw();drawNext();});
         newGame();
     </script>
 </body>

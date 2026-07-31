@@ -14,7 +14,6 @@
             user-select: none; -webkit-user-select: none;
         }
         h1 { color: #00d4ff; font-size: clamp(1.2em, 4vw, 1.6em); margin-bottom: 2px; }
-        .subtitle { color: #888; font-size: 0.85em; margin-bottom: 10px; }
 
         .header { display: flex; gap: 10px; margin-bottom: 10px; }
         .score-box {
@@ -25,9 +24,7 @@
         .score-box .value { font-size: clamp(1em, 3vw, 1.5em); font-weight: bold; }
         .best .value { color: #ffd700; }
 
-        .board-wrap {
-            width: 100%; max-width: 420px; aspect-ratio: 1;
-        }
+        .board-wrap { width: 100%; max-width: 420px; aspect-ratio: 1; }
         .board {
             background: #16213e; border: 2px solid #333; border-radius: 8px;
             width: 100%; height: 100%; padding: 2%;
@@ -42,7 +39,6 @@
             font-weight: bold; font-size: clamp(1em, 6vw, 2em);
             transition: all 0.1s;
         }
-
         .btn-row { display: flex; gap: 8px; margin-top: 12px; }
         .btn {
             padding: 10px 22px; border: 2px solid #444; background: transparent;
@@ -51,7 +47,22 @@
         }
         .btn:active { border-color: #00d4ff; color: #00d4ff; }
         .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
-        .tips { color: #555; font-size: 0.75em; margin-top: 8px; text-align: center; }
+
+        .howto {
+            background: #16213e; border: 1px solid #333; border-radius: 10px;
+            padding: 12px 18px; margin-top: 12px; width: 100%; max-width: 420px;
+        }
+        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
+        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
+        .howto ul li::before { content: '▸ '; color: #00d4ff; }
+
+        .nav { display: flex; gap: 8px; margin-top: 12px; width: 100%; max-width: 420px; justify-content: space-between; }
+        .nav a {
+            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
+            color: #ccc; text-decoration: none; font-size: 0.9em;
+            transition: all 0.15s; white-space: nowrap;
+        }
+        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
 
         .overlay {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -67,32 +78,46 @@
             background: #00d4ff; color: #1a1a2e; border: none;
             border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
         }
+        .overlay .countdown { color: #888; font-size: 0.8em; margin-top: 8px; }
     </style>
 </head>
 <body>
-    <h1>🔢 2048</h1>
-    <p class="subtitle">游戏 #003</p>
-
+    <h1>🔢 2048 — #003</h1>
     <div class="header">
         <div class="score-box"><div class="label">得分</div><div class="value" id="score">0</div></div>
         <div class="score-box best"><div class="label">最佳</div><div class="value" id="best">0</div></div>
     </div>
 
     <div class="board-wrap">
-        <div class="board">
-            <div class="grid" id="grid"></div>
-        </div>
+        <div class="board"><div class="grid" id="grid"></div></div>
     </div>
 
     <div class="btn-row">
         <button class="btn" id="undoBtn">↩ 撤销</button>
         <button class="btn primary" id="newBtn">🔄 新游戏</button>
     </div>
-    <p class="tips">方向键/WASD 移动 | 触屏滑动 | Ctrl+Z 撤销</p>
+
+    <div class="howto">
+        <h3>📖 玩法说明</h3>
+        <ul>
+            <li>方向键/WASD 滑动方块，相同数字碰撞后合并</li>
+            <li>每次滑动后会出现新的 2 或 4</li>
+            <li>合成 <strong>2048</strong> 即可通关！</li>
+            <li>通关后可选择继续挑战更高分（如 4096、8192）</li>
+            <li>Ctrl+Z 可撤销上一步（最多 10 步）</li>
+        </ul>
+    </div>
+
+    <div class="nav">
+        <a href="/joy-game-study/play/002-sudoku/">◀ 上一个：🧩 数独</a>
+        <a href="/joy-game-study/play/004-tetris/">下一个：🧱 俄罗斯方块 ▶</a>
+    </div>
 
     <div class="overlay win" id="winOverlay">
         <h2>🎉 你做到了！</h2><p>得分：<strong id="winScore">0</strong></p>
-        <button onclick="continueGame()">🚀 继续</button><button onclick="newGame()">🔄 新游戏</button>
+        <button onclick="window.location.href='/joy-game-study/play/004-tetris/'">▶ 下一个游戏</button>
+        <button onclick="continueGame()">🚀 继续挑战</button>
+        <p class="countdown" id="cdText"></p>
     </div>
     <div class="overlay lose" id="loseOverlay">
         <h2>😵 游戏结束</h2><p>得分：<strong id="loseScore">0</strong></p>
@@ -102,21 +127,14 @@
     <script>
         let grid = Array(4).fill().map(() => Array(4).fill(0));
         let score = 0, bestScore = 0, won = false, keepPlaying = false, history = [];
+        let countdownTimer = null;
 
         function tileStyle(value) {
             const colors = {
-                0:      { bg: '#0f0f23', fg: '#0f0f23' },
-                2:      { bg: '#eee4da', fg: '#776e65' },
-                4:      { bg: '#ede0c8', fg: '#776e65' },
-                8:      { bg: '#f2b179', fg: '#f9f6f2' },
-                16:     { bg: '#f59563', fg: '#f9f6f2' },
-                32:     { bg: '#f67c5f', fg: '#f9f6f2' },
-                64:     { bg: '#f65e3b', fg: '#f9f6f2' },
-                128:    { bg: '#edcf72', fg: '#f9f6f2' },
-                256:    { bg: '#edcc61', fg: '#f9f6f2' },
-                512:    { bg: '#edc850', fg: '#f9f6f2' },
-                1024:   { bg: '#edc53f', fg: '#f9f6f2' },
-                2048:   { bg: '#edc22e', fg: '#f9f6f2' },
+                0:{bg:'#0f0f23',fg:'#0f0f23'},2:{bg:'#eee4da',fg:'#776e65'},4:{bg:'#ede0c8',fg:'#776e65'},
+                8:{bg:'#f2b179',fg:'#f9f6f2'},16:{bg:'#f59563',fg:'#f9f6f2'},32:{bg:'#f67c5f',fg:'#f9f6f2'},
+                64:{bg:'#f65e3b',fg:'#f9f6f2'},128:{bg:'#edcf72',fg:'#f9f6f2'},256:{bg:'#edcc61',fg:'#f9f6f2'},
+                512:{bg:'#edc850',fg:'#f9f6f2'},1024:{bg:'#edc53f',fg:'#f9f6f2'},2048:{bg:'#edc22e',fg:'#f9f6f2'},
             };
             return colors[value] || { bg: '#121110', fg: '#f9f6f2' };
         }
@@ -136,12 +154,10 @@
             const el = document.getElementById('grid');
             el.innerHTML = '';
             for (let r=0;r<4;r++) for (let c=0;c<4;c++) {
-                const cell = document.createElement('div');
-                cell.className = 'cell';
+                const cell = document.createElement('div'); cell.className = 'cell';
                 const s = tileStyle(grid[r][c]);
                 cell.style.cssText = `background:${s.bg};color:${s.fg};`;
-                cell.textContent = grid[r][c] || '';
-                el.appendChild(cell);
+                cell.textContent = grid[r][c] || ''; el.appendChild(cell);
             }
             document.getElementById('score').textContent = score;
             if (score > bestScore) { bestScore = score; localStorage.setItem('2048-best', bestScore); }
@@ -156,7 +172,7 @@
         }
 
         function move(dir) {
-            const old=grid.map(r=>[...r]), oldScore=score;
+            const old=grid.map(r=>[...r]);
             if (dir==='left') for (let r=0;r<4;r++) grid[r]=slide(grid[r]);
             else if (dir==='right') for (let r=0;r<4;r++) grid[r]=slide(grid[r].reverse()).reverse();
             else if (dir==='up') for (let c=0;c<4;c++) { const col=slide([grid[0][c],grid[1][c],grid[2][c],grid[3][c]]); for (let r=0;r<4;r++) grid[r][c]=col[r]; }
@@ -164,7 +180,18 @@
             if (grid.every((r,i)=>r.every((v,j)=>v===old[i][j]))) return false;
             saveState(); addTile(); render();
             if (!won && !keepPlaying) {
-                for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (grid[r][c]>=2048) { won=true; setTimeout(()=>{document.getElementById('winScore').textContent=score;document.getElementById('winOverlay').style.display='block';},200); }
+                for (let r=0;r<4;r++) for (let c=0;c<4;c++) if (grid[r][c]>=2048) {
+                    won=true;
+                    document.getElementById('winScore').textContent=score;
+                    document.getElementById('winOverlay').style.display='block';
+                    // Auto countdown
+                    let sec=5;
+                    document.getElementById('cdText').textContent = `${sec} 秒后自动跳转...`;
+                    countdownTimer = setInterval(()=>{
+                        sec--; if(sec<=0){clearInterval(countdownTimer);window.location.href='/joy-game-study/play/004-tetris/';}
+                        else document.getElementById('cdText').textContent = `${sec} 秒后自动跳转...`;
+                    },1000);
+                }
             }
             if (isGameOver()) setTimeout(()=>{document.getElementById('loseScore').textContent=score;document.getElementById('loseOverlay').style.display='block';},300);
             return true;
@@ -175,10 +202,13 @@
             return false;
         }
         function isGameOver() { return !canMove(); }
-
-        function continueGame() { keepPlaying=true; document.getElementById('winOverlay').style.display='none'; }
-
+        function continueGame() {
+            keepPlaying=true;
+            if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null;}
+            document.getElementById('winOverlay').style.display='none';
+        }
         function newGame() {
+            if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null;}
             grid=Array(4).fill().map(()=>Array(4).fill(0)); score=0; won=false; keepPlaying=false; history=[];
             addTile(); addTile(); render();
             document.getElementById('winOverlay').style.display='none'; document.getElementById('loseOverlay').style.display='none';
