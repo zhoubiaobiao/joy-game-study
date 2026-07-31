@@ -258,15 +258,7 @@
             ctx.clearRect(0, 0, SIZE, SIZE);
             ctx.fillStyle = '#16213e'; ctx.fillRect(0, 0, SIZE, SIZE);
             if (selectedR>=0 && selectedC>=0) {
-                ctx.fillStyle = '#00d4ff22'; ctx.fillRect(selectedC*CELL, selectedR*CELL, CELL, CELL);
-                if (board[selectedR][selectedC] !== 0) {
-                    const num = board[selectedR][selectedC];
-                    for (let r=0;r<9;r++) for (let c=0;c<9;c++) if (board[r][c]===num && !(r===selectedR&&c===selectedC)) { ctx.fillStyle = '#00d4ff18'; ctx.fillRect(c*CELL, r*CELL, CELL, CELL); }
-                }
-                ctx.fillStyle = '#ffffff08';
-                for (let i=0; i<9; i++) { ctx.fillRect(i*CELL, selectedR*CELL, CELL, CELL); ctx.fillRect(selectedC*CELL, i*CELL, CELL, CELL); }
-                const br=Math.floor(selectedR/3)*3, bc=Math.floor(selectedC/3)*3;
-                ctx.fillRect(bc*CELL, br*CELL, CELL*3, CELL*3);
+                ctx.fillStyle = '#00d4ff33'; ctx.fillRect(selectedC*CELL, selectedR*CELL, CELL, CELL);
             }
             for (let r=0;r<9;r++) for (let c=0;c<9;c++) {
                 if (board[r][c]!==0 && !given[r][c] && board[r][c]!==solution[r][c]) { ctx.fillStyle = '#ff444433'; ctx.fillRect(c*CELL, r*CELL, CELL, CELL); }
