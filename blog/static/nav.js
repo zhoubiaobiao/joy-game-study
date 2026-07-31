@@ -4,16 +4,21 @@
 (function() {
     // 游戏列表（按顺序），新增游戏只需在这里加一行
     var games = [
-        { id: '001-snake',   name: '🐍 贪吃蛇',       how: '控制蛇吃红色食物，每吃一个 +10 分。撞墙或撞到自己游戏结束。随着得分增高速度越来越快。<br><b>桌面</b>：方向键/WASD 移动 | 空格暂停 | R 重来<br><b>手机</b>：滑动屏幕 或 使用下方方向按钮' },
-        { id: '002-sudoku',  name: '🧩 数独',         how: '在 9×9 格子中填入 1-9，使每行、每列、每个 3×3 宫格内数字不重复。<br>填完后点击 <b>「提交检查」</b> 查看结果（绿色正确，红色错误），共 3 次提交机会。<br>修改任意格子后判定自动清除，可重新提交。' },
-        { id: '003-2048',    name: '🔢 2048',         how: '方向键滑动方块，相同数字碰撞后合并相加。每次滑动出现新方块。<br>合成 <b>2048</b> 通关！可继续挑战 4096、8192...<br>Ctrl+Z 撤销（最多10步）。' },
-        { id: '004-tetris',  name: '🧱 俄罗斯方块',    how: '移动和旋转下落的方块，填满整行即可消除得分。<br>⬅➡ 移动 | ⬆ 旋转 | ⬇ 加速 | 空格 直接落底<br>同时消多行有额外加分，每 10 行升一级加速。' },
+        { id: '001-snake',   name: '🐍 贪吃蛇',     short: '贪吃蛇',   how: '控制蛇吃红色食物，每吃一个 +10 分。撞墙或撞到自己游戏结束。随着得分增高速度越来越快。<br><b>桌面</b>：方向键/WASD 移动 | 空格暂停 | R 重来<br><b>手机</b>：滑动屏幕 或 使用下方方向按钮' },
+        { id: '002-sudoku',  name: '🧩 数独',       short: '数独',     how: '在 9×9 格子中填入 1-9，使每行、每列、每个 3×3 宫格内数字不重复。<br>填完后点击 <b>「提交检查」</b> 查看结果（绿色正确，红色错误），共 3 次提交机会。<br>修改任意格子后判定自动清除，可重新提交。' },
+        { id: '003-2048',    name: '🔢 2048',       short: '2048',     how: '方向键滑动方块，相同数字碰撞后合并相加。每次滑动出现新方块。<br>合成 <b>2048</b> 通关！可继续挑战 4096、8192...<br>Ctrl+Z 撤销（最多10步）。' },
+        { id: '004-tetris',  name: '🧱 俄罗斯方块',  short: '俄罗斯方块', how: '移动和旋转下落的方块，填满整行即可消除得分。<br>⬅➡ 移动 | ⬆ 旋转 | ⬇ 加速 | 空格 直接落底<br>同时消多行有额外加分，每 10 行升一级加速。' },
     ];
 
     var path = window.location.pathname;
     var curIdx = -1;
     for (var i = 0; i < games.length; i++) {
-        if (path.indexOf('/play/' + games[i].id) !== -1) { curIdx = i; break; }
+        var id = games[i].id;
+        // 精确匹配完整路径段：/play/001-snake/ 或 /play/001-snake（末尾无斜杠）
+        if (path.indexOf('/play/' + id + '/') !== -1 ||
+            path.lastIndexOf('/play/' + id) === path.length - ('/play/' + id).length) {
+            curIdx = i; break;
+        }
     }
 
     var html = '';
@@ -26,23 +31,38 @@
         html += '</div>';
     }
 
-    // 导航栏
+    // 导航栏 - 使用两套文本：桌面端完整版 + 移动端简短版
     html += '<div class="hnav-nav">';
+
+    // 上一个按钮
     if (curIdx > 0) {
-        html += '<a href="/joy-game-study/play/' + games[curIdx-1].id + '/">◀ ' + games[curIdx-1].name + '</a>';
+        var prev = games[curIdx - 1];
+        html += '<a href="/joy-game-study/play/' + prev.id + '/">';
+        html += '<span class="hnav-full">◀ ' + prev.name + '</span>';
+        html += '<span class="hnav-short">◀ ' + prev.short + '</span>';
+        html += '</a>';
     } else if (curIdx === 0) {
-        html += '<span class="hnav-disabled">◀ 没有了</span>';
+        html += '<span class="hnav-disabled"><span class="hnav-full">◀ 没有了</span><span class="hnav-short">◀</span></span>';
     } else {
-        html += '<span class="hnav-disabled">◀ 上一个</span>';
+        html += '<span class="hnav-disabled"><span class="hnav-full">◀ 上一个</span><span class="hnav-short">◀</span></span>';
     }
-    html += '<a href="/joy-game-study/" class="hnav-home">🏠 首页</a>';
+
+    // 首页按钮
+    html += '<a href="/joy-game-study/" class="hnav-home"><span class="hnav-full">🏠 首页</span><span class="hnav-short">🏠</span></a>';
+
+    // 下一个按钮
     if (curIdx >= 0 && curIdx < games.length - 1) {
-        html += '<a href="/joy-game-study/play/' + games[curIdx+1].id + '/">' + games[curIdx+1].name + ' ▶</a>';
+        var next = games[curIdx + 1];
+        html += '<a href="/joy-game-study/play/' + next.id + '/">';
+        html += '<span class="hnav-full">' + next.name + ' ▶</span>';
+        html += '<span class="hnav-short">' + next.short + ' ▶</span>';
+        html += '</a>';
     } else if (curIdx === games.length - 1) {
-        html += '<span class="hnav-disabled">待开发 ▶</span>';
+        html += '<span class="hnav-disabled"><span class="hnav-full">待开发 ▶</span><span class="hnav-short">▶</span></span>';
     } else {
-        html += '<span class="hnav-disabled">下一个 ▶</span>';
+        html += '<span class="hnav-disabled"><span class="hnav-full">下一个 ▶</span><span class="hnav-short">▶</span></span>';
     }
+
     html += '</div>';
 
     // 注入样式
@@ -51,17 +71,33 @@
         '.hnav-howto { background:#16213e; border:1px solid #333; border-radius:10px; padding:12px 18px; margin-top:14px; width:100%; max-width:500px; }' +
         '.hnav-howto h3 { color:#00d4ff; font-size:0.95em; margin-bottom:6px; }' +
         '.hnav-howto p { color:#aaa; font-size:0.8em; line-height:1.8; }' +
-        '.hnav-nav { display:flex; gap:8px; margin-top:14px; width:100%; max-width:500px; justify-content:space-between; }' +
-        '.hnav-nav a { padding:10px 20px; border:2px solid #444; border-radius:8px; color:#ccc; text-decoration:none; font-size:0.9em; white-space:nowrap; transition:all 0.15s; }' +
+        '.hnav-nav { display:flex; gap:6px; margin-top:14px; width:100%; max-width:500px; justify-content:space-between; flex-wrap:wrap; }' +
+        '.hnav-nav a { padding:10px 16px; border:2px solid #444; border-radius:8px; color:#ccc; text-decoration:none; font-size:0.9em; white-space:nowrap; transition:all 0.15s; text-align:center; }' +
         '.hnav-nav a:hover { border-color:#00d4ff; color:#00d4ff; }' +
-        '.hnav-nav a.hnav-home { border-color:#ffd70044; color:#ffd700; }' +
+        '.hnav-nav a.hnav-home { border-color:#ffd70044; color:#ffd700; flex-shrink:0; }' +
         '.hnav-nav a.hnav-home:hover { border-color:#ffd700; }' +
-        '.hnav-nav .hnav-disabled { padding:10px 20px; border:2px solid #222; border-radius:8px; color:#444; font-size:0.9em; white-space:nowrap; }' +
+        '.hnav-nav .hnav-disabled { padding:10px 14px; border:2px solid #222; border-radius:8px; color:#444; font-size:0.9em; white-space:nowrap; text-align:center; }' +
+        // 默认显示完整版
+        '.hnav-short { display:none; }' +
+        '.hnav-full { display:inline; }' +
+        // 窄屏切换为简短版
+        '@media (max-width:420px) {' +
+            '.hnav-nav { gap:4px; }' +
+            '.hnav-nav a { padding:8px 10px; font-size:0.82em; }' +
+            '.hnav-nav .hnav-disabled { padding:8px 8px; font-size:0.82em; }' +
+            '.hnav-full { display:none; }' +
+            '.hnav-short { display:inline; }' +
+        '}' +
+        // 极窄屏进一步压缩
+        '@media (max-width:340px) {' +
+            '.hnav-nav a { padding:8px 6px; font-size:0.75em; }' +
+            '.hnav-nav .hnav-disabled { padding:8px 4px; font-size:0.75em; }' +
+        '}' +
         '';
 
     document.head.appendChild(style);
 
-    // 插入到 body 末尾（在已有内容之后）
+    // 插入到 body 末尾
     var container = document.createElement('div');
     container.innerHTML = html;
     document.body.appendChild(container);
