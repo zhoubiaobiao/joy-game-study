@@ -1,0 +1,7 @@
+# 游戏目录
+# 每个游戏一个子目录，格式：NNN-game-name/
+#
+# 例如:
+#   001-snake-game/
+#   002-tetris/
+#   003-flappy-bird/
