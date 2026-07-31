@@ -50,22 +50,6 @@
         .action-btn:active { border-color: #00d4ff; color: #00d4ff; }
         .action-btn.submit-btn { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; font-weight: bold; }
 
-        .howto {
-            background: #16213e; border: 1px solid #333; border-radius: 10px;
-            padding: 12px 18px; margin-top: 12px; width: 100%; max-width: 450px;
-        }
-        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
-        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
-        .howto ul li::before { content: '▸ '; color: #00d4ff; }
-
-        .nav { display: flex; gap: 8px; margin-top: 12px; width: 100%; max-width: 450px; justify-content: space-between; }
-        .nav a {
-            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
-            color: #ccc; text-decoration: none; font-size: 0.9em;
-            transition: all 0.15s; white-space: nowrap;
-        }
-        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
-
         .overlay {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
@@ -113,22 +97,6 @@
         <button class="action-btn" id="newGame">🔄 新局</button>
     </div>
 
-    <div class="howto">
-        <h3>📖 玩法说明</h3>
-        <ul>
-            <li>在 9×9 格子中填入 1-9，使每行、每列、每个 3×3 宫格内数字不重复</li>
-            <li>所有格子填完后，点击 <strong>「提交检查」</strong> 查看结果</li>
-            <li>提交后会标出正确（绿）和错误（红）的格子</li>
-            <li>有 <strong>3 次</strong> 提交机会，用完全部错误格子会被清空</li>
-            <li>修改任意格子后结果自动清除，可重新提交</li>
-        </ul>
-    </div>
-
-    <div class="nav">
-        <a href="/joy-game-study/play/001-snake/">◀ 上一个：🐍 贪吃蛇</a>
-        <a href="/joy-game-study/">🏠 首页</a>
-        <a href="/joy-game-study/play/003-2048/">下一个：🔢 2048 ▶</a>
-    </div>
 
     <div class="overlay win" id="winMsg">
         <h2>🎉 恭喜通关！</h2>
@@ -391,5 +359,6 @@
         window.addEventListener('resize', () => { resizeCanvas(); draw(); });
         newGame();
     </script>
+<script src="/joy-game-study/nav.js"></script>
 </body>
 </html>

@@ -52,23 +52,6 @@
         .dpad-btn:active { background: #00d4ff33; border-color: #00d4ff; }
         .dpad-btn.wide { width: 100px; font-size: 0.8em; }
 
-        .howto {
-            background: #16213e; border: 1px solid #333; border-radius: 10px;
-            padding: 12px 18px; margin-top: 10px; width: 100%; max-width: 450px;
-        }
-        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
-        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
-        .howto ul li::before { content: '▸ '; color: #00d4ff; }
-
-        .nav { display: flex; gap: 8px; margin-top: 10px; width: 100%; max-width: 450px; justify-content: space-between; }
-        .nav a {
-            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
-            color: #ccc; text-decoration: none; font-size: 0.9em;
-            transition: all 0.15s; white-space: nowrap;
-        }
-        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
-        .nav a.disabled { opacity: 0.3; pointer-events: none; }
-
         .overlay {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
@@ -117,22 +100,6 @@
         </div>
     </div>
 
-    <div class="howto">
-        <h3>📖 玩法说明</h3>
-        <ul>
-            <li>移动和旋转下落的方块，填满整行即可消除</li>
-            <li>⬅➡ 移动 | ⬆ 旋转 | ⬇ 加速下落 | 空格 直接落底</li>
-            <li>同时消除多行有额外加分（最高 Tetris ×4 奖励）</li>
-            <li>每消 10 行升一级，方块下落速度加快</li>
-            <li>方块堆到顶部游戏结束，挑战你的最高分！</li>
-        </ul>
-    </div>
-
-    <div class="nav">
-        <a href="/joy-game-study/play/003-2048/">◀ 上一个：🔢 2048</a>
-        <a href="/joy-game-study/">🏠 首页</a>
-        <a class="disabled" href="#">待开发 ▶</a>
-    </div>
 
     <div class="overlay lose" id="loseOverlay">
         <h2>💥 游戏结束</h2>
@@ -275,5 +242,6 @@
         window.addEventListener('resize',()=>{resizeCanvas();draw();drawNext();});
         newGame();
     </script>
+<script src="/joy-game-study/nav.js"></script>
 </body>
 </html>

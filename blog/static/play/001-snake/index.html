@@ -48,25 +48,6 @@
         }
         .action-btns button:active { background: #00d4ff33; border-color: #00d4ff; }
 
-        /* Instructions */
-        .howto {
-            background: #16213e; border: 1px solid #333; border-radius: 10px;
-            padding: 12px 18px; margin-top: 14px; width: 100%; max-width: 500px;
-        }
-        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
-        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
-        .howto ul li::before { content: '▸ '; color: #00d4ff; }
-
-        /* Navigation */
-        .nav { display: flex; gap: 8px; margin-top: 14px; width: 100%; max-width: 500px; justify-content: space-between; }
-        .nav a {
-            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
-            color: #ccc; text-decoration: none; font-size: 0.9em;
-            transition: all 0.15s; white-space: nowrap;
-        }
-        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
-        .nav a.disabled { opacity: 0.3; pointer-events: none; }
-
         .info { color: #777; font-size: 0.8em; margin-top: 8px; text-align: center; }
 
         .game-over-msg {
@@ -99,23 +80,6 @@
             <div class="empty"></div><button id="btnDown">▼</button><div class="empty"></div>
         </div>
         <div class="action-btns"><button id="btnRestart">🔄 重来</button></div>
-    </div>
-
-    <div class="howto">
-        <h3>📖 玩法说明</h3>
-        <ul>
-            <li>控制蛇吃红色食物，每吃一个 +10 分</li>
-            <li>撞墙或撞到自己游戏结束</li>
-            <li>随着得分增加，蛇移动速度越来越快</li>
-            <li>桌面端：方向键 / WASD 控制 | 空格暂停 | R 重来</li>
-            <li>手机端：滑动屏幕 或 使用下方方向按钮</li>
-        </ul>
-    </div>
-
-    <div class="nav">
-        <a class="disabled" href="#">◀ 上一个</a>
-        <a href="/joy-game-study/">🏠 首页</a>
-        <a href="/joy-game-study/play/002-sudoku/">下一个：🧩 数独 ▶</a>
     </div>
 
     <div class="info">游戏 #001 — Joy Game Studio</div>
@@ -248,5 +212,6 @@
         window.addEventListener('resize',()=>{resizeCanvas();draw();});
         init();
     </script>
+<script src="/joy-game-study/nav.js"></script>
 </body>
 </html>

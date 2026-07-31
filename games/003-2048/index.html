@@ -48,22 +48,6 @@
         .btn:active { border-color: #00d4ff; color: #00d4ff; }
         .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
 
-        .howto {
-            background: #16213e; border: 1px solid #333; border-radius: 10px;
-            padding: 12px 18px; margin-top: 12px; width: 100%; max-width: 420px;
-        }
-        .howto h3 { color: #00d4ff; font-size: 0.95em; margin-bottom: 6px; }
-        .howto ul { list-style: none; color: #aaa; font-size: 0.8em; line-height: 1.8; }
-        .howto ul li::before { content: '▸ '; color: #00d4ff; }
-
-        .nav { display: flex; gap: 8px; margin-top: 12px; width: 100%; max-width: 420px; justify-content: space-between; }
-        .nav a {
-            padding: 10px 20px; border: 2px solid #444; border-radius: 8px;
-            color: #ccc; text-decoration: none; font-size: 0.9em;
-            transition: all 0.15s; white-space: nowrap;
-        }
-        .nav a:hover { border-color: #00d4ff; color: #00d4ff; }
-
         .overlay {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
@@ -97,22 +81,6 @@
         <button class="btn primary" id="newBtn">🔄 新游戏</button>
     </div>
 
-    <div class="howto">
-        <h3>📖 玩法说明</h3>
-        <ul>
-            <li>方向键/WASD 滑动方块，相同数字碰撞后合并</li>
-            <li>每次滑动后会出现新的 2 或 4</li>
-            <li>合成 <strong>2048</strong> 即可通关！</li>
-            <li>通关后可选择继续挑战更高分（如 4096、8192）</li>
-            <li>Ctrl+Z 可撤销上一步（最多 10 步）</li>
-        </ul>
-    </div>
-
-    <div class="nav">
-        <a href="/joy-game-study/play/002-sudoku/">◀ 上一个：🧩 数独</a>
-        <a href="/joy-game-study/">🏠 首页</a>
-        <a href="/joy-game-study/play/004-tetris/">下一个：🧱 俄罗斯方块 ▶</a>
-    </div>
 
     <div class="overlay win" id="winOverlay">
         <h2>🎉 你做到了！</h2><p>得分：<strong id="winScore">0</strong></p>
@@ -236,5 +204,6 @@
         document.getElementById('best').textContent = bestScore;
         newGame();
     </script>
+<script src="/joy-game-study/nav.js"></script>
 </body>
 </html>
