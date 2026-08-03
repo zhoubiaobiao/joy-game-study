@@ -144,6 +144,15 @@ function buildNavJs() {
 
 // ─── 2. 生成 _index.md ──────────────────────────────────
 function buildIndex() {
+  const cards = games.map(g => {
+    const num = g.id.split('-')[0];
+    return `        <a href="/joy-game-study/play/${g.id}/" class="gc-card">
+            <span class="gc-num">#${num}</span>
+            <span class="gc-name">${g.name}</span>
+            <span class="gc-play">开始游戏 ▶</span>
+        </a>`;
+  }).join('\n');
+
   const lines = [
     '---',
     'title: "游戏列表"',
@@ -151,19 +160,75 @@ function buildIndex() {
     'menu: main',
     '---',
     '',
+    '<style>',
+    '    .gc-grid {',
+    '        display: grid;',
+    '        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));',
+    '        gap: 8px;',
+    '        margin: 12px 0;',
+    '    }',
+    '    .gc-card {',
+    '        display: flex;',
+    '        align-items: center;',
+    '        gap: 8px;',
+    '        padding: 10px 14px;',
+    '        background: #16213e;',
+    '        border: 1px solid #2a2a4a;',
+    '        border-radius: 8px;',
+    '        text-decoration: none;',
+    '        transition: border-color 0.15s, background 0.15s;',
+    '    }',
+    '    .gc-card:hover {',
+    '        border-color: #00d4ff;',
+    '        background: #1a2a4a;',
+    '    }',
+    '    .gc-num {',
+    '        color: #666;',
+    '        font-size: 0.8em;',
+    '        font-family: monospace;',
+    '        min-width: 36px;',
+    '    }',
+    '    .gc-name {',
+    '        color: #eee;',
+    '        font-size: 0.95em;',
+    '        flex: 1;',
+    '        white-space: nowrap;',
+    '        overflow: hidden;',
+    '        text-overflow: ellipsis;',
+    '    }',
+    '    .gc-play {',
+    '        color: #00d4ff;',
+    '        font-size: 0.75em;',
+    '        white-space: nowrap;',
+    '        opacity: 0;',
+    '        transition: opacity 0.15s;',
+    '    }',
+    '    .gc-card:hover .gc-play {',
+    '        opacity: 1;',
+    '    }',
+    '    @media (max-width: 500px) {',
+    '        .gc-grid {',
+    '            grid-template-columns: repeat(2, 1fr);',
+    '            gap: 6px;',
+    '        }',
+    '        .gc-card {',
+    '            padding: 8px 10px;',
+    '            gap: 4px;',
+    '        }',
+    '        .gc-name { font-size: 0.82em; }',
+    '        .gc-num { font-size: 0.7em; min-width: 28px; }',
+    '        .gc-play { display: none; }',
+    '    }',
+    '</style>',
+    '',
     '## 🎮 已完成游戏',
     '',
-    '| # | 游戏 | 试玩 |',
-    '|---|------|------|',
+    '<div class="gc-grid">',
+    cards,
+    '</div>',
+    '',
+    `> 进度：${games.length} / 100 🎉`,
   ];
-
-  for (const g of games) {
-    const num = g.id.split('-')[0];
-    lines.push(`| ${num} | ${g.name} | [开始游戏](/joy-game-study/play/${g.id}/) |`);
-  }
-
-  lines.push('');
-  lines.push(`> 进度：${games.length} / 100 🎉`);
 
   const dest = path.join(BLOG_CONTENT, '_index.md');
   fs.writeFileSync(dest, lines.join('\n') + '\n', 'utf-8');
