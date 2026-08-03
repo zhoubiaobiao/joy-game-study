@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>040 - 幸运转盘</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .btn.spin { background: #ffd70033; border-color: #ffd700; color: #ffd700; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎡 幸运转盘 — #040</h1>
+    <div class="top-bar">
+        <span>金币：<span id="score">100</span></span>
+        <span>次数：<span id="spins">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn spin" id="spinBtn">🎯 转动转盘 (-10💰)</button>
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 转动转盘赢取奖励 | 中大奖励获得更多金币 | 金币用完游戏结束</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💰 金币耗尽</h2>
+        <p>共转动：<strong id="endSpins">0</strong>次 | 最高金币：<strong id="endMax">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const SEGMENTS = 8;
+        const PRIZES = ['💎 500','💣 炸','🎁 200','💣 炸','⭐ 100','💣 炸','🎯 50','💰 20'];
+        const COLORS = ['#ff4444','#333','#44aaff','#333','#ffd700','#333','#44dd44','#ff8844'];
+        const VALUES = [500, 0, 200, 0, 100, 0, 50, 20];
+        let W, H, cx, cy, R;
+        let angle, spinning, spinSpeed, coins, spins, maxCoins, gameOver, animId;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = maxW;
+            canvas.width = W; canvas.height = H;
+            cx = W / 2; cy = H / 2; R = W * 0.4;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            coins = 100; spins = 0; maxCoins = 100; gameOver = false;
+            angle = 0; spinning = false; spinSpeed = 0;
+            document.getElementById('score').textContent = '100';
+            document.getElementById('spins').textContent = '0';
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('spinBtn').textContent = '🎯 转动转盘 (-10💰)';
+            loop();
+        }
+
+        function spin() {
+            if (spinning || gameOver) return;
+            if (coins < 10) return;
+            coins -= 10; spins++;
+            document.getElementById('score').textContent = coins;
+            document.getElementById('spins').textContent = spins;
+            spinSpeed = 15 + Math.random() * 20;
+            spinning = true;
+        }
+
+        function update() {
+            if (gameOver) return;
+            if (spinning) {
+                angle += spinSpeed;
+                spinSpeed *= 0.985;
+                if (spinSpeed < 0.05) {
+                    spinning = false;
+                    spinSpeed = 0;
+                    // Determine result
+                    const segAngle = (Math.PI * 2) / SEGMENTS;
+                    const normAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+                    const pointerAngle = -Math.PI / 2;
+                    let relative = (pointerAngle - normAngle + Math.PI * 2) % (Math.PI * 2);
+                    const idx = Math.floor(relative / segAngle) % SEGMENTS;
+                    const prize = VALUES[idx];
+                    if (prize > 0) {
+                        coins += prize;
+                        if (coins > maxCoins) maxCoins = coins;
+                    }
+                    document.getElementById('score').textContent = coins;
+                    document.getElementById('spinBtn').textContent = prize > 0 ? '🎯 转动转盘 (-10💰) | +' + prize : '🎯 转动转盘 (-10💰) | 💣';
+                    if (coins <= 0) {
+                        setTimeout(() => {
+                            document.getElementById('endSpins').textContent = spins;
+                            document.getElementById('endMax').textContent = maxCoins;
+                            document.getElementById('endOverlay').style.display = 'block';
+                            gameOver = true;
+                        }, 800);
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, W, H);
+
+            // Wheel segments
+            const segAngle = (Math.PI * 2) / SEGMENTS;
+            for (let i = 0; i < SEGMENTS; i++) {
+                const startA = angle + i * segAngle - Math.PI / 2;
+                const endA = startA + segAngle;
+                ctx.fillStyle = COLORS[i]; ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, R, startA, endA);
+                ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 2; ctx.stroke();
+                // Text
+                const midA = startA + segAngle / 2;
+                const tx = cx + Math.cos(midA) * R * 0.65;
+                const ty = cy + Math.sin(midA) * R * 0.65;
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(R*0.2)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(PRIZES[i], tx, ty);
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+            }
+
+            // Center hub
+            ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(cx, cy, R * 0.15, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, R * 0.08, 0, Math.PI * 2); ctx.fill();
+
+            // Outer rim
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, Math.PI * 2); ctx.stroke();
+
+            // Pointer (top)
+            const px = cx, py = cy - R - 14;
+            ctx.fillStyle = '#ff4444'; ctx.beginPath();
+            ctx.moveTo(px, py + 18); ctx.lineTo(px - 10, py - 8); ctx.lineTo(px + 10, py - 8); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+            // Lights around rim
+            for (let i = 0; i < 24; i++) {
+                const la = i * Math.PI * 2 / 24;
+                const lx = cx + Math.cos(la) * (R + 12);
+                const ly = cy + Math.sin(la) * (R + 12);
+                const lit = Math.sin(Date.now() / 200 + i) > 0;
+                ctx.fillStyle = lit ? '#ffd700' : '#444';
+                ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Stats
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('💰 ' + coins, cx, H - 16);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); animId = requestAnimationFrame(loop); }
+
+        document.getElementById('spinBtn').addEventListener('click', spin);
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        canvas.addEventListener('click', spin);
+
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

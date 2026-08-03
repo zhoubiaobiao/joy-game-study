@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>036 - 保龄球</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #2d1f0e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎳 保龄球 — #036</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>回合：<span id="round">1</span>/10</span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info">💡 点击左右移动球 | 按住蓄力松开投球 | 每回合2次投球机会</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🏆 游戏结束</h2>
+        <p>总分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, pins, ball, score, round, rollsLeft, bestScore, gameOver;
+        let charging, power, aimX;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 0.85);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            resize();
+            score = 0; round = 1; rollsLeft = 2; gameOver = false;
+            charging = false; power = 0; aimX = W / 2;
+            bestScore = parseInt(localStorage.getItem('bowling-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('round').textContent = '1/10';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            setupFrame();
+        }
+
+        function setupFrame() {
+            ball = { x: W / 2, y: H * 0.72, vy: 0, moving: false, r: 12 };
+            // Setup pins in triangle
+            pins = [];
+            const startY = H * 0.2, startX = W / 2, gap = 18;
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col <= row; col++) {
+                    pins.push({
+                        x: startX + (col - row / 2) * gap * 1.5,
+                        y: startY + row * gap * 1.3,
+                        r: 6, standing: true
+                    });
+                }
+            }
+            rollsLeft = 2;
+            document.getElementById('round').textContent = round + '/10';
+            loop();
+        }
+
+        function update() {
+            if (gameOver) return;
+            if (ball.moving) {
+                ball.y += ball.vy;
+                ball.vy += 0.1;
+                // Check pin collisions
+                for (let p of pins) {
+                    if (!p.standing) continue;
+                    const dx = ball.x - p.x, dy = ball.y - p.y;
+                    const dist = Math.sqrt(dx*dx+dy*dy);
+                    if (dist < ball.r + p.r) {
+                        p.standing = false;
+                        // Chain reaction
+                        for (let p2 of pins) {
+                            if (!p2.standing || p2 === p) continue;
+                            const d2x = p.x - p2.x, d2y = p.y - p2.y;
+                            const d2 = Math.sqrt(d2x*d2x+d2y*d2y);
+                            if (d2 < p.r * 3) p2.standing = false;
+                        }
+                    }
+                }
+                // Ball off screen
+                if (ball.y > H + 20) {
+                    ball.moving = false;
+                    finishRoll();
+                }
+            }
+        }
+
+        function finishRoll() {
+            rollsLeft--;
+            const standing = pins.filter(p => p.standing).length;
+            if (standing === 0) {
+                // Strike or spare bonus
+                if (rollsLeft === 1) { score += 10; } // strike
+                else { score += 10; } // spare
+                nextFrame();
+            } else if (rollsLeft === 0) {
+                score += 10 - standing;
+                nextFrame();
+            } else {
+                // Reset ball for second roll
+                ball = { x: W / 2, y: H * 0.72, vy: 0, moving: false, r: 12 };
+                document.getElementById('score').textContent = score;
+            }
+        }
+
+        function nextFrame() {
+            round++;
+            if (round > 10) { endGame(); return; }
+            setupFrame();
+            document.getElementById('score').textContent = score;
+        }
+
+        function roll() {
+            if (ball.moving || gameOver) return;
+            ball.vy = -(4 + power / 100 * 10);
+            ball.moving = true;
+            charging = false; power = 0;
+            updateScore();
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('bowling-best', bestScore); document.getElementById('best').textContent = bestScore; }
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Lane
+            ctx.fillStyle = '#d4a056'; ctx.fillRect(0, 0, W, H * 0.75);
+            // Lane boards
+            for (let i = 0; i < 20; i++) {
+                ctx.strokeStyle = 'rgba(0,0,0,0.1)'; ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(i * W / 20, 0); ctx.lineTo(i * W / 20, H * 0.72); ctx.stroke();
+            }
+            // Floor
+            ctx.fillStyle = '#8B4513'; ctx.fillRect(0, H * 0.72, W, H * 0.28);
+            // Foul line
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(W * 0.15, H * 0.68); ctx.lineTo(W * 0.85, H * 0.68); ctx.stroke();
+
+            // Pins
+            for (let p of pins) {
+                if (!p.standing) continue;
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ff0000';
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.35, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+            }
+
+            // Ball
+            ctx.fillStyle = '#2244cc';
+            ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(ball.x - 2, ball.y - 2, ball.r * 0.3, 0, Math.PI*2); ctx.fill();
+            // Finger holes
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ball.x + 3, ball.y - 2, 3, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(ball.x + 1, ball.y + 3, 3, 0, Math.PI*2); ctx.fill();
+
+            // Power bar
+            if (charging) {
+                ctx.fillStyle = '#333'; ctx.fillRect(W / 2 - 30, H * 0.85, 60, 10);
+                ctx.fillStyle = power > 60 ? '#ff4444' : '#44ff44';
+                ctx.fillRect(W / 2 - 30, H * 0.85, 60 * power / 100, 10);
+            }
+
+            // Arrow guide
+            ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '10px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('▲', ball.x, ball.y - ball.r - 6);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        // Controls
+        canvas.addEventListener('mousemove', e => {
+            if (ball.moving) return;
+            const rect = canvas.getBoundingClientRect();
+            aimX = (e.clientX - rect.left) * (W / rect.width);
+            aimX = Math.max(ball.r, Math.min(W - ball.r, aimX));
+            if (!charging) ball.x = aimX;
+        });
+        canvas.addEventListener('mousedown', e => {
+            if (ball.moving || gameOver) return;
+            charging = true; power = 0;
+            function chargeUp() {
+                if (!charging) return;
+                power = Math.min(100, power + 3);
+                draw();
+                if (charging) requestAnimationFrame(chargeUp);
+            }
+            chargeUp();
+        });
+        canvas.addEventListener('mouseup', () => { if (charging) roll(); });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (ball.moving || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            aimX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            aimX = Math.max(ball.r, Math.min(W - ball.r, aimX));
+            ball.x = aimX;
+            charging = true; power = 0;
+            function chargeUp() {
+                if (!charging) return;
+                power = Math.min(100, power + 4);
+                draw();
+                if (charging) requestAnimationFrame(chargeUp);
+            }
+            chargeUp();
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); if (charging) roll(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

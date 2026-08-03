@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>039 - 弹弓</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 420px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: linear-gradient(#87CEEB, #c8e6ff); }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🏹 弹弓 — #039</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>剩余：<span id="left">8</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 从弹弓皮兜拖拽瞄准 | 松开发射 | 击中靶子得分</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🏆 弹药耗尽！</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        let targets, projectile, score, shotsLeft, bestScore, gameOver;
+        let aiming, aimPos, slingX, slingY;
+        let animId;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 420);
+            W = maxW; H = Math.floor(W * 0.75);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; shotsLeft = 8; gameOver = false;
+            aiming = false; aimPos = null;
+            slingX = W * 0.15; slingY = H * 0.7;
+            projectile = { x: slingX, y: slingY, vx: 0, vy: 0, active: false, trail: [] };
+            bestScore = parseInt(localStorage.getItem('slingshot-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('left').textContent = '8';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            setupTargets();
+            loop();
+        }
+
+        function setupTargets() {
+            targets = [];
+            // Array of targets at various positions
+            const cols = [0.45, 0.65, 0.82];
+            const rows = [0.2, 0.35, 0.5];
+            for (let r = 0; r < rows.length; r++) {
+                for (let c = 0; c < cols.length; c++) {
+                    targets.push({
+                        x: cols[c] * W + (Math.random() - 0.5) * 30,
+                        y: rows[r] * H + (Math.random() - 0.5) * 20,
+                        r: 16 + r * 3,
+                        value: (3 - r) * 30,
+                        alive: true,
+                        color: r === 0 ? '#ffd700' : r === 1 ? '#44aaff' : '#ff6644'
+                    });
+                }
+            }
+        }
+
+        function update() {
+            if (gameOver) return;
+            if (projectile.active) {
+                projectile.vy += 0.25; // gravity
+                projectile.x += projectile.vx;
+                projectile.y += projectile.vy;
+                projectile.trail.push({ x: projectile.x, y: projectile.y, life: 8 });
+                if (projectile.trail.length > 20) projectile.trail.shift();
+
+                // Check target collisions
+                for (let t of targets) {
+                    if (!t.alive) continue;
+                    const dx = projectile.x - t.x, dy = projectile.y - t.y;
+                    if (Math.sqrt(dx*dx+dy*dy) < t.r + 6) {
+                        t.alive = false;
+                        score += t.value;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('slingshot-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        projectile.active = false;
+                        break;
+                    }
+                }
+
+                // Off screen
+                if (projectile.y > H + 50 || projectile.x > W + 50 || projectile.x < -50) {
+                    projectile.active = false;
+                }
+            }
+
+            // Update trail
+            for (let t of projectile.trail) t.life--;
+
+            // Check shots
+            if (!projectile.active && shotsLeft <= 0 && !gameOver) endGame();
+        }
+
+        function shoot() {
+            if (!aiming || shotsLeft <= 0 || projectile.active) return;
+            const dx = slingX - aimPos.x, dy = slingY - aimPos.y;
+            const dist = Math.sqrt(dx*dx+dy*dy);
+            const power = Math.min(15, dist / 5);
+            projectile.x = slingX; projectile.y = slingY;
+            projectile.vx = (dx / dist) * power;
+            projectile.vy = (dy / dist) * power;
+            projectile.active = true;
+            projectile.trail = [];
+            shotsLeft--;
+            document.getElementById('left').textContent = shotsLeft;
+            aiming = false; aimPos = null;
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky gradient
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#87CEEB'); sky.addColorStop(1, '#c8e6ff');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Ground hill
+            ctx.fillStyle = '#7cb342'; ctx.beginPath(); ctx.ellipse(W*0.15, H*0.78, W*0.4, H*0.18, 0,0,Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#558b2f'; ctx.beginPath(); ctx.ellipse(W*0.15, H*0.8, W*0.35, H*0.12, 0,0,Math.PI*2); ctx.fill();
+
+            // Targets
+            for (let t of targets) {
+                if (!t.alive) continue;
+                // Stand
+                ctx.fillStyle = '#8B4513'; ctx.fillRect(t.x - 2, t.y, 4, H - t.y - t.r);
+                // Target board
+                ctx.fillStyle = t.color; ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(t.x, t.y, t.r*0.4, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(t.x, t.y, t.r*0.2, 0, Math.PI*2); ctx.fill();
+                // Value
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(t.r*0.8)}px "Segoe UI"`; ctx.textAlign='center'; ctx.fillText(t.value, t.x, t.y+t.r*1.6); ctx.textAlign='start';
+            }
+
+            // Slingshot
+            // Fork
+            ctx.strokeStyle = '#5D4037'; ctx.lineWidth = 5;
+            ctx.beginPath(); ctx.moveTo(slingX, slingY); ctx.lineTo(slingX - 15, slingY - 25); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(slingX, slingY); ctx.lineTo(slingX + 15, slingY - 25); ctx.stroke();
+            // Rubber band
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+            const pouchX = aiming ? aimPos.x : slingX;
+            const pouchY = aiming ? aimPos.y : slingY;
+            ctx.beginPath(); ctx.moveTo(slingX - 15, slingY - 25); ctx.lineTo(pouchX, pouchY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(slingX + 15, slingY - 25); ctx.lineTo(pouchX, pouchY); ctx.stroke();
+            // Pouch
+            ctx.fillStyle = '#8D6E63'; ctx.beginPath(); ctx.arc(pouchX, pouchY, 6, 0, Math.PI*2); ctx.fill();
+
+            // Projectile trail
+            if (projectile.active) {
+                for (let i = 0; i < projectile.trail.length; i++) {
+                    const t = projectile.trail[i];
+                    ctx.fillStyle = `rgba(255,100,50,${t.life/8})`;
+                    ctx.beginPath(); ctx.arc(t.x, t.y, 3, 0, Math.PI*2); ctx.fill();
+                }
+            }
+
+            // Projectile
+            if (projectile.active) {
+                ctx.fillStyle = '#ff4400'; ctx.beginPath(); ctx.arc(projectile.x, projectile.y, 5, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ff8800'; ctx.beginPath(); ctx.arc(projectile.x - 1, projectile.y - 1, 2, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Shots left
+            ctx.fillStyle = '#333'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('剩余: ' + shotsLeft + '发', W - 10, 20); ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('mousedown', e => {
+            if (shotsLeft <= 0 || projectile.active || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.clientX - rect.left) * (W / rect.width);
+            const cy = (e.clientY - rect.top) * (H / rect.height);
+            const dist = Math.sqrt((cx-slingX)**2 + (cy-slingY)**2);
+            if (dist < 60) { aiming = true; aimPos = { x: cx, y: cy }; }
+        });
+        canvas.addEventListener('mousemove', e => {
+            if (!aiming) return;
+            const rect = canvas.getBoundingClientRect();
+            aimPos = { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
+        });
+        canvas.addEventListener('mouseup', () => shoot());
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (shotsLeft <= 0 || projectile.active || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            const cy = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            if (Math.sqrt((cx-slingX)**2+(cy-slingY)**2) < 70) { aiming = true; aimPos = { x: cx, y: cy }; }
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!aiming) return;
+            const rect = canvas.getBoundingClientRect();
+            aimPos = { x: (e.touches[0].clientX - rect.left) * (W / rect.width), y: (e.touches[0].clientY - rect.top) * (H / rect.height) };
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); shoot(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

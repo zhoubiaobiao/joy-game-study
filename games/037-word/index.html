@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>037 - 单词拼写</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 4px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 8px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .timer-bar-wrap { width: 100%; max-width: 400px; height: 8px; background: #1a2840; border-radius: 4px; margin-bottom: 10px; overflow: hidden; border: 1px solid #333; }
+        .timer-bar { height: 100%; background: linear-gradient(90deg, #ff4444, #ffd700, #44ff44); border-radius: 4px; transition: width 0.1s linear; }
+        .game-area { width: 100%; max-width: 400px; background: #16213e; border: 2px solid #333; border-radius: 12px; padding: 16px 20px; text-align: center; }
+        .hint { color: #888; font-size: 0.85em; margin-bottom: 6px; }
+        .letters { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+        .letter { width: 42px; height: 42px; background: #0f0f23; border: 2px solid #555; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.4em; font-weight: bold; color: #ffd700; cursor: pointer; transition: all 0.12s; -webkit-tap-highlight-color: transparent; }
+        .letter:active { transform: scale(0.9); }
+        .letter.used { opacity: 0.3; cursor: default; }
+        .answer-row { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; min-height: 48px; align-items: center; }
+        .answer-slot { width: 42px; height: 42px; border: 2px dashed #444; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.4em; font-weight: bold; color: #fff; }
+        .answer-slot.filled { border-color: #00d4ff; background: #00d4ff11; cursor: pointer; }
+        .answer-slot:active { background: #ff444422; }
+        .input-row { display: flex; gap: 6px; justify-content: center; margin-bottom: 8px; }
+        .letter-input { background: #0f0f23; border: 2px solid #555; border-radius: 8px; color: #ffd700; font-size: 1.3em; width: 200px; padding: 8px 12px; text-align: center; font-family: inherit; font-weight: bold; outline: none; text-transform: uppercase; }
+        .letter-input:focus { border-color: #00d4ff; }
+        .feedback { min-height: 1.3em; font-size: 0.9em; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🔤 单词拼写 — #037</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>连击：<span id="combo">x1</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="timer-bar-wrap"><div class="timer-bar" id="timerBar" style="width:100%"></div></div>
+    <div class="game-area">
+        <div class="hint" id="hint"></div>
+        <div class="letters" id="letters"></div>
+        <div class="answer-row" id="answerRow"></div>
+        <div class="input-row">
+            <input type="text" class="letter-input" id="typeInput" maxlength="20" placeholder="或直接输入单词" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+        <div class="feedback" id="feedback"></div>
+        <div class="btn-row">
+            <button class="btn" id="clearBtn">↩ 清除</button>
+            <button class="btn" id="skipBtn">⏭ 跳过</button>
+            <button class="btn primary" id="newBtn">🔄 新游戏</button>
+        </div>
+    </div>
+    <div class="overlay" id="endOverlay">
+        <h2>⏰ 时间到！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 答对：<strong id="endCorrect">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const WORDS = [
+            'apple','banana','orange','grape','melon','lemon','peach','mango','cherry','berry',
+            'tiger','eagle','panda','whale','shark','horse','sheep','mouse','snake','zebra',
+            'happy','smile','light','dream','music','dance','ocean','river','cloud','storm',
+            'brain','learn','study','think','smart','quick','brave','kind','wise','calm',
+            'green','black','white','brown','gold','silver','round','sharp','sweet','fresh',
+            'planet','rocket','space','earth','moon','star','comet','orbit','laser','cyber',
+        ];
+        let score, combo, bestScore, correctCount, timeLeft, timerInterval, gameOver, gameTime;
+        let currentWord, scrambled, answerSlots, usedLetters;
+
+        function newGame() {
+            clearInterval(timerInterval);
+            score = 0; combo = 1; correctCount = 0; gameOver = false; gameTime = 60;
+            bestScore = parseInt(localStorage.getItem('word-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('combo').textContent = 'x1';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('feedback').textContent = '';
+            document.getElementById('timerBar').style.width = '100%';
+            timeLeft = 60;
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                document.getElementById('timerBar').style.width = Math.max(0, timeLeft / gameTime * 100) + '%';
+                if (timeLeft <= 0) endGame();
+            }, 100);
+            nextWord();
+        }
+
+        function scrambleWord(word) {
+            const arr = word.toUpperCase().split('');
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            // Make sure it's different from original
+            return arr.join('') === word.toUpperCase() ? scrambleWord(word) : arr;
+        }
+
+        function nextWord() {
+            if (gameOver) return;
+            currentWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+            scrambled = scrambleWord(currentWord);
+            answerSlots = Array(currentWord.length).fill('');
+            usedLetters = Array(scrambled.length).fill(false);
+            document.getElementById('hint').textContent = '提示：' + currentWord.length + '个字母 | 中文：' + getHint(currentWord);
+            document.getElementById('typeInput').value = '';
+            document.getElementById('feedback').textContent = '';
+            render();
+        }
+
+        function getHint(w) {
+            const hints = { apple:'苹果',banana:'香蕉',orange:'橙子',grape:'葡萄',melon:'甜瓜',lemon:'柠檬',peach:'桃子',mango:'芒果',cherry:'樱桃',berry:'浆果',tiger:'老虎',eagle:'鹰',panda:'熊猫',whale:'鲸鱼',shark:'鲨鱼',horse:'马',sheep:'羊',mouse:'老鼠',snake:'蛇',zebra:'斑马',happy:'快乐',smile:'微笑',light:'光',dream:'梦',music:'音乐',dance:'舞蹈',ocean:'海洋',river:'河流',cloud:'云',storm:'风暴',brain:'大脑',learn:'学习',study:'学习',think:'思考',smart:'聪明',quick:'快速',brave:'勇敢',kind:'善良',wise:'明智',calm:'冷静',green:'绿色',black:'黑色',white:'白色',brown:'棕色',gold:'金色',silver:'银色',round:'圆形',sharp:'尖锐',sweet:'甜',fresh:'新鲜',planet:'行星',rocket:'火箭',space:'太空',earth:'地球',moon:'月亮',star:'星星',comet:'彗星',orbit:'轨道',laser:'激光',cyber:'网络' };
+            return hints[w] || '???';
+        }
+
+        function clickLetter(idx) {
+            if (gameOver || usedLetters[idx]) return;
+            const slot = answerSlots.findIndex(s => s === '');
+            if (slot < 0) return;
+            answerSlots[slot] = scrambled[idx];
+            usedLetters[idx] = true;
+            document.getElementById('feedback').textContent = '';
+            render();
+            checkAnswer();
+        }
+
+        function clickSlot(idx) {
+            if (gameOver || answerSlots[idx] === '') return;
+            const letter = answerSlots[idx];
+            const srcIdx = scrambled.indexOf(letter);
+            // Find the used letter to undo
+            for (let i = 0; i < usedLetters.length; i++) {
+                if (usedLetters[i] && scrambled[i] === letter) {
+                    usedLetters[i] = false; break;
+                }
+            }
+            answerSlots[idx] = '';
+            document.getElementById('feedback').textContent = '';
+            render();
+        }
+
+        function clearAll() {
+            usedLetters.fill(false);
+            answerSlots.fill('');
+            document.getElementById('typeInput').value = '';
+            document.getElementById('feedback').textContent = '';
+            render();
+        }
+
+        function checkAnswer() {
+            const answer = answerSlots.join('');
+            if (answer.length !== currentWord.length) return;
+            if (answer.toUpperCase() === currentWord.toUpperCase()) {
+                const bonus = Math.floor(timeLeft / 5);
+                const pts = (currentWord.length * 5 + bonus) * combo;
+                score += pts; correctCount++; combo = Math.min(10, combo + 1);
+                document.getElementById('score').textContent = score;
+                document.getElementById('combo').textContent = 'x' + combo;
+                document.getElementById('feedback').textContent = '✅ 正确！+' + pts + '分';
+                document.getElementById('feedback').style.color = '#44ff44';
+                if (score > bestScore) { bestScore = score; localStorage.setItem('word-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                // Bonus time
+                timeLeft = Math.min(gameTime, timeLeft + 3);
+                setTimeout(nextWord, 600);
+            }
+        }
+
+        document.getElementById('typeInput').addEventListener('input', function(e) {
+            const val = this.value.toUpperCase();
+            if (val === currentWord.toUpperCase()) {
+                const bonus = Math.floor(timeLeft / 5);
+                const pts = (currentWord.length * 5 + bonus) * combo;
+                score += pts; correctCount++; combo = Math.min(10, combo + 1);
+                document.getElementById('score').textContent = score;
+                document.getElementById('combo').textContent = 'x' + combo;
+                document.getElementById('feedback').textContent = '✅ 正确！+' + pts + '分';
+                document.getElementById('feedback').style.color = '#44ff44';
+                if (score > bestScore) { bestScore = score; localStorage.setItem('word-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                timeLeft = Math.min(gameTime, timeLeft + 3);
+                this.value = '';
+                setTimeout(nextWord, 600);
+            }
+        });
+
+        function render() {
+            // Scrambled letters
+            const lettersEl = document.getElementById('letters');
+            lettersEl.innerHTML = '';
+            for (let i = 0; i < scrambled.length; i++) {
+                const div = document.createElement('div');
+                div.className = 'letter' + (usedLetters[i] ? ' used' : '');
+                div.textContent = scrambled[i];
+                if (!usedLetters[i]) div.addEventListener('click', () => clickLetter(i));
+                lettersEl.appendChild(div);
+            }
+            // Answer slots
+            const answerEl = document.getElementById('answerRow');
+            answerEl.innerHTML = '';
+            for (let i = 0; i < currentWord.length; i++) {
+                const div = document.createElement('div');
+                div.className = 'answer-slot' + (answerSlots[i] ? ' filled' : '');
+                div.textContent = answerSlots[i] || '';
+                if (answerSlots[i]) div.addEventListener('click', () => clickSlot(i));
+                answerEl.appendChild(div);
+            }
+        }
+
+        function endGame() {
+            gameOver = true; clearInterval(timerInterval);
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endCorrect').textContent = correctCount;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function skip() { if (!gameOver) { combo = 1; document.getElementById('combo').textContent = 'x1'; document.getElementById('feedback').textContent = '⏭ 已跳过'; document.getElementById('feedback').style.color = '#888'; nextWord(); } }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        document.getElementById('clearBtn').addEventListener('click', clearAll);
+        document.getElementById('skipBtn').addEventListener('click', skip);
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

@@ -43,5 +43,10 @@ menu: main
 | 033 | 🌧️ 躲雨 | [开始游戏](/joy-game-study/play/033-rain/) |
 | 034 | 🎱 台球 | [开始游戏](/joy-game-study/play/034-pool/) |
 | 035 | 🚁 直升机 | [开始游戏](/joy-game-study/play/035-heli/) |
+| 036 | 🎳 保龄球 | [开始游戏](/joy-game-study/play/036-bowling/) |
+| 037 | 🔤 单词拼写 | [开始游戏](/joy-game-study/play/037-word/) |
+| 038 | 🎪 套圈 | [开始游戏](/joy-game-study/play/038-ring/) |
+| 039 | 🏹 弹弓 | [开始游戏](/joy-game-study/play/039-slingshot/) |
+| 040 | 🎡 幸运转盘 | [开始游戏](/joy-game-study/play/040-wheel/) |
 
-> 进度：35 / 100 🎉
+> 进度：40 / 100 🎉

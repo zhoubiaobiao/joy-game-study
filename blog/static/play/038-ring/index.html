@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>038 - 套圈</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 420px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #2d4a22; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎪 套圈 — #038</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>剩余：<span id="left">10</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 点击并拖拽瞄准投掷套圈 | 套中越高越远的分值越高</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🏆 游戏结束</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, pegs, rings, score, ringsLeft, bestScore, gameOver;
+        let aiming, aimStart, aimEnd;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 420);
+            W = maxW; H = Math.floor(W * 0.8);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            resize();
+            score = 0; ringsLeft = 10; gameOver = false;
+            aiming = false; aimStart = null; aimEnd = null;
+            bestScore = parseInt(localStorage.getItem('ring-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('left').textContent = '10';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+
+            // Setup pegs at different distances
+            pegs = [];
+            const rows = [0.3, 0.48, 0.66];
+            const cols = [0.15, 0.35, 0.5, 0.65, 0.85];
+            const values = [50, 30, 20, 15, 10];
+
+            for (let r = 0; r < rows.length; r++) {
+                for (let c = 0; c < cols.length; c++) {
+                    pegs.push({
+                        x: cols[c] * W, y: rows[r] * H,
+                        r: 10,
+                        value: values[r],
+                        color: r === 0 ? '#ffd700' : r === 1 ? '#ff8844' : '#88ccff'
+                    });
+                }
+            }
+            rings = [];
+            loop();
+        }
+
+        function update() {
+            // Move existing rings
+            for (let ring of rings) {
+                if (ring.landed) continue;
+                ring.x += ring.vx;
+                ring.y += ring.vy;
+                ring.vy += 0.15; // gravity
+
+                // Check landing on pegs
+                if (ring.vy > 0) {
+                    for (let peg of pegs) {
+                        const dx = ring.x - peg.x, dy = ring.y - peg.y;
+                        const dist = Math.sqrt(dx*dx+dy*dy);
+                        if (dist < peg.r + ring.outerR && dist > peg.r - ring.innerR) {
+                            ring.landed = true;
+                            ring.peg = peg;
+                            score += peg.value;
+                            document.getElementById('score').textContent = score;
+                            if (score > bestScore) { bestScore = score; localStorage.setItem('ring-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                            break;
+                        }
+                    }
+                }
+
+                // Off screen
+                if (ring.y > H + 30) ring.offScreen = true;
+            }
+            rings = rings.filter(r => !r.offScreen);
+            if (ringsLeft <= 0 && rings.length === 0 && !gameOver) endGame();
+        }
+
+        function throwRing() {
+            if (!aiming || ringsLeft <= 0) return;
+            const dx = aimStart.x - aimEnd.x;
+            const dy = aimStart.y - aimEnd.y;
+            const power = Math.min(12, Math.sqrt(dx*dx+dy*dy) / 6);
+            rings.push({
+                x: W / 2, y: H * 0.88,
+                vx: (dx / Math.sqrt(dx*dx+dy*dy)) * power * (aimStart.x > W/2 ? 1 : -1),
+                vy: (dy / Math.sqrt(dx*dx+dy*dy)) * power * 0.7 - power * 0.5,
+                outerR: 14, innerR: 9, landed: false, offScreen: false, peg: null
+            });
+            ringsLeft--;
+            document.getElementById('left').textContent = ringsLeft;
+            aiming = false; aimStart = null; aimEnd = null;
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Ground
+            ctx.fillStyle = '#3d6a2e'; ctx.fillRect(0, 0, W, H);
+            // Grass texture
+            for (let i = 0; i < 40; i++) {
+                ctx.strokeStyle = `rgba(${50+Math.random()*30},${100+Math.random()*50},${40+Math.random()*20},0.3)`;
+                ctx.lineWidth = 1;
+                const gx = Math.random() * W, gy = Math.random() * H;
+                ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + 3, gy - 4); ctx.stroke();
+            }
+
+            // Pegs
+            for (let peg of pegs) {
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.arc(peg.x + 2, peg.y + 3, peg.r, 0, Math.PI*2); ctx.fill();
+                // Post
+                ctx.fillStyle = '#8B6914'; ctx.fillRect(peg.x - peg.r/2, peg.y, peg.r, peg.y - H * 0.05);
+                // Top
+                ctx.fillStyle = peg.color; ctx.beginPath(); ctx.arc(peg.x, peg.y, peg.r, 0, Math.PI*2); ctx.fill();
+                // Value label
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(peg.r)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(peg.value, peg.x, peg.y); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+            }
+
+            // Landed rings
+            for (let ring of rings) {
+                if (!ring.landed) continue;
+                ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(ring.x, ring.y - ring.outerR * 0.5, ring.outerR, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = 'rgba(255,68,68,0.3)'; ctx.beginPath(); ctx.arc(ring.x, ring.y - ring.outerR * 0.5, ring.outerR, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Flying rings
+            for (let ring of rings) {
+                if (ring.landed || ring.offScreen) continue;
+                ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.arc(ring.x, ring.y, ring.outerR, 0, Math.PI*2); ctx.stroke();
+            }
+
+            // Aim line
+            if (aiming && aimStart) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+                ctx.beginPath(); ctx.moveTo(W/2, H*0.88);
+                ctx.lineTo(W/2 + (aimStart.x - aimEnd.x) * 3, H*0.88 + (aimStart.y - aimEnd.y) * 3);
+                ctx.stroke(); ctx.setLineDash([]);
+                // Power
+                const dx = aimStart.x - aimEnd.x, dy = aimStart.y - aimEnd.y;
+                const p = Math.min(100, Math.round(Math.sqrt(dx*dx+dy*dy) / 6 / 12 * 100));
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('力度: ' + p + '%', W/2, H*0.78); ctx.textAlign = 'start';
+            }
+
+            // Rings remaining
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('剩余: ' + ringsLeft + '个', W - 10, H - 5);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        canvas.addEventListener('mousedown', e => {
+            if (ringsLeft <= 0 || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.clientX - rect.left) * (W / rect.width);
+            const cy = (e.clientY - rect.top) * (H / rect.height);
+            if (cy > H * 0.7) { aiming = true; aimStart = { x: cx, y: cy }; aimEnd = { x: cx, y: cy }; }
+        });
+        canvas.addEventListener('mousemove', e => {
+            if (!aiming) return;
+            const rect = canvas.getBoundingClientRect();
+            aimEnd = { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) };
+        });
+        canvas.addEventListener('mouseup', () => { throwRing(); });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (ringsLeft <= 0 || gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            const cy = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            if (cy > H * 0.7) { aiming = true; aimStart = { x: cx, y: cy }; aimEnd = { x: cx, y: cy }; }
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!aiming) return;
+            const rect = canvas.getBoundingClientRect();
+            aimEnd = { x: (e.touches[0].clientX - rect.left) * (W / rect.width), y: (e.touches[0].clientY - rect.top) * (H / rect.height) };
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); throwRing(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); draw(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
