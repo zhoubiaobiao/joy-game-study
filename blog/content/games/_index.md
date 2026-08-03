@@ -14,5 +14,9 @@ menu: main
 | 004 | 🧱 俄罗斯方块 | [开始游戏](/joy-game-study/play/004-tetris/) |
 | 005 | 🧱 打砖块 | [开始游戏](/joy-game-study/play/005-breakout/) |
 | 006 | 🦾 弹球 | [开始游戏](/joy-game-study/play/006-pinball/) |
+| 007 | 🐤 Flappy Bird | [开始游戏](/joy-game-study/play/007-flappy/) |
+| 008 | ⭕ 井字棋 AI | [开始游戏](/joy-game-study/play/008-tictactoe/) |
+| 009 | 💣 扫雷 | [开始游戏](/joy-game-study/play/009-minesweeper/) |
+| 010 | 🃏 记忆翻牌 | [开始游戏](/joy-game-study/play/010-memory/) |
 
-> 进度：6 / 100
+> 进度：10 / 100 🎉 阶段二完成！

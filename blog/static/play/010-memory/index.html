@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>010 - 记忆翻牌</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.2em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .status-bar { display: flex; gap: 18px; margin-bottom: 8px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; }
+        .status-bar span { color: #ffd700; font-weight: bold; font-family: 'Consolas', monospace; }
+        .status-msg { color: #00d4ff; font-size: 0.85em; margin-bottom: 8px; min-height: 1.3em; }
+
+        .grid {
+            display: grid; gap: 8px;
+            width: 100%; max-width: 440px; padding: 4px;
+            grid-template-columns: repeat(4, 1fr);
+            aspect-ratio: 1;
+        }
+        @media (max-width: 360px) { .grid { gap: 5px; } }
+
+        .card {
+            aspect-ratio: 1;
+            perspective: 600px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .card-inner {
+            position: relative; width: 100%; height: 100%;
+            transition: transform 0.4s ease;
+            transform-style: preserve-3d;
+        }
+        .card.flipped .card-inner { transform: rotateY(180deg); }
+        .card.matched .card-inner { transform: rotateY(180deg); }
+
+        .card-face {
+            position: absolute; width: 100%; height: 100%;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .card-front {
+            background: linear-gradient(135deg, #2a3a5c, #1e2d4a);
+            border: 2px solid #3a4a6c;
+            font-size: clamp(1.5em, 8vw, 2.5em);
+        }
+        .card-front::after {
+            content: '?'; color: #00d4ff44; font-weight: bold;
+        }
+        .card-back {
+            background: #1a2840; border: 2px solid #00d4ff55;
+            transform: rotateY(180deg);
+            font-size: clamp(1.8em, 9vw, 3em);
+        }
+        .card.matched .card-back {
+            background: #1a3a20; border-color: #44dd6655;
+        }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 10px 20px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.8em, 2.5vw, 0.95em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 6px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🃏 记忆翻牌 — #010</h1>
+
+    <div class="status-bar">
+        <span>步数：<span id="moves">0</span></span>
+        <span>配对：<span id="pairs">0</span>/8</span>
+        <span>⏱ <span id="timer">00:00</span></span>
+        <span>最佳：<span id="best">--</span></span>
+    </div>
+    <div class="status-msg" id="msg"></div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新一局</button>
+    </div>
+    <div class="info">💡 点击卡片翻开，找到两张相同的即配对成功 | 尽量用最少的步数完成</div>
+
+    <div class="overlay win" id="winOverlay">
+        <h2>🎉 全部找到！</h2>
+        <p>步数：<strong id="winMoves">0</strong> | 用时：<strong id="winTime">00:00</strong></p>
+        <p id="newRecord" style="color:#ffd700;display:none;">🏆 新纪录！</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const EMOJIS = ['🐶','🐱','🐼','🐨','🦊','🐸','🐵','🦄','🐙','🦋','🐞','🦀','🐳','🦜','🐰','🐻'];
+        const TOTAL_PAIRS = 8;
+        let cards = [], flipped = [], matched = new Set();
+        let moves = 0, pairs = 0, timerSec = 0, timerInterval = null;
+        let bestScore, locked = false;
+
+        function shuffle(arr) {
+            for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+            return arr;
+        }
+
+        function newGame() {
+            clearInterval(timerInterval); timerInterval = null; timerSec = 0;
+            moves = 0; pairs = 0; flipped = []; matched = new Set(); locked = false;
+
+            // 随机选8个emoji
+            const selected = shuffle([...EMOJIS]).slice(0, TOTAL_PAIRS);
+            cards = shuffle([...selected, ...selected].map((emoji, i) => ({ id: i, value: emoji })));
+
+            document.getElementById('moves').textContent = '0';
+            document.getElementById('pairs').textContent = '0';
+            document.getElementById('timer').textContent = '00:00';
+            document.getElementById('msg').textContent = '';
+            document.getElementById('winOverlay').style.display = 'none';
+
+            bestScore = JSON.parse(localStorage.getItem('memory-best') || 'null');
+            document.getElementById('best').textContent = bestScore ? bestScore.moves + '步/' + formatTime(bestScore.time) : '--';
+
+            renderBoard();
+        }
+
+        function startTimer() {
+            if (timerInterval) return;
+            timerInterval = setInterval(() => {
+                timerSec++;
+                document.getElementById('timer').textContent = formatTime(timerSec);
+            }, 1000);
+        }
+
+        function formatTime(s) { const m = Math.floor(s / 60).toString().padStart(2, '0'); const sec = (s % 60).toString().padStart(2, '0'); return m + ':' + sec; }
+
+        function flipCard(idx) {
+            if (locked || matched.has(idx) || flipped.includes(idx) || flipped.length >= 2) return;
+
+            // 第一张翻牌时启动计时器
+            startTimer();
+
+            flipped.push(idx);
+            renderBoard();
+
+            if (flipped.length === 2) {
+                moves++;
+                document.getElementById('moves').textContent = moves;
+                locked = true;
+
+                const [a, b] = flipped;
+                if (cards[a].value === cards[b].value) {
+                    // 匹配成功
+                    matched.add(a); matched.add(b);
+                    pairs++;
+                    document.getElementById('pairs').textContent = pairs;
+                    document.getElementById('msg').textContent = '✅ 配对成功！';
+                    document.getElementById('msg').style.color = '#44dd66';
+                    flipped = [];
+                    locked = false;
+
+                    if (pairs === TOTAL_PAIRS) {
+                        clearInterval(timerInterval);
+                        document.getElementById('winMoves').textContent = moves;
+                        document.getElementById('winTime').textContent = formatTime(timerSec);
+                        const isNew = !bestScore || moves < bestScore.moves || (moves === bestScore.moves && timerSec < bestScore.time);
+                        document.getElementById('newRecord').style.display = isNew ? 'block' : 'none';
+                        if (isNew) {
+                            localStorage.setItem('memory-best', JSON.stringify({ moves, time: timerSec }));
+                            document.getElementById('best').textContent = moves + '步/' + formatTime(timerSec);
+                        }
+                        document.getElementById('winOverlay').style.display = 'block';
+                    }
+                } else {
+                    // 不匹配
+                    document.getElementById('msg').textContent = '❌ 不匹配，记住位置再试';
+                    document.getElementById('msg').style.color = '#ff5555';
+                    setTimeout(() => {
+                        flipped = [];
+                        locked = false;
+                        renderBoard();
+                    }, 700);
+                }
+                renderBoard();
+            }
+        }
+
+        function renderBoard() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            cards.forEach((card, i) => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                if (flipped.includes(i) || matched.has(i)) div.classList.add('flipped');
+                if (matched.has(i)) div.classList.add('matched');
+
+                div.innerHTML = '<div class="card-inner"><div class="card-face card-front"></div><div class="card-face card-back">' + card.value + '</div></div>';
+                div.addEventListener('click', () => flipCard(i));
+                grid.appendChild(div);
+            });
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        newGame();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
