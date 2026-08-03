@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>035 - 直升机</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 480px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a3a5c; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚁 直升机 — #035</h1>
+    <div class="top-bar">
+        <span>距离：<span id="score">0</span>m</span>
+        <span>最佳：<span id="best">0</span>m</span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 按住屏幕/空格键上升 | 松开下降 | 穿过洞穴缝隙</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 坠毁！</h2>
+        <p>距离：<strong id="endScore">0</strong>m</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        let heli, obstacles, score, bestScore, gameOver, thrust, scrollX, particles, animId;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 480);
+            W = maxW; H = Math.floor(W * 0.6);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            heli = { x: W * 0.2, y: H / 2, vy: 0, r: 12 };
+            obstacles = [];
+            particles = [];
+            score = 0; gameOver = false; thrust = false; scrollX = 0;
+            bestScore = parseInt(localStorage.getItem('heli-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            generateObstacles();
+            loop();
+        }
+
+        function generateObstacles() {
+            const gap = 120 + Math.random() * 80;
+            const gapY = H * 0.2 + Math.random() * H * 0.5;
+            for (let i = 0; i < 10; i++) {
+                obstacles.push({
+                    x: W + i * (150 + Math.random() * 60),
+                    gapY: H * 0.2 + Math.sin(i * 1.5) * H * 0.2 + Math.random() * H * 0.2,
+                    gap: 100 + Math.random() * 70,
+                    width: 30 + Math.random() * 20,
+                    scored: false
+                });
+            }
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Gravity
+            heli.vy += thrust ? -0.4 : 0.3;
+            heli.vy = Math.max(-5, Math.min(5, heli.vy));
+            heli.y += heli.vy;
+
+            // Score
+            score++;
+            document.getElementById('score').textContent = Math.floor(score / 6);
+
+            // Move obstacles
+            const speed = 2 + score / 500;
+            scrollX += speed;
+            for (let o of obstacles) o.x -= speed;
+
+            // Recycle obstacles
+            for (let o of obstacles) {
+                if (o.x < -60) {
+                    o.x = obstacles[obstacles.length - 1].x + 130 + Math.random() * 80;
+                    o.gapY = H * 0.2 + Math.random() * H * 0.5;
+                    o.gap = 90 + Math.random() * 80;
+                    o.scored = false;
+                }
+            }
+
+            // Collision
+            for (let o of obstacles) {
+                const hx = heli.x, hy = heli.y, hr = heli.r;
+                if (hx + hr > o.x - o.width / 2 && hx - hr < o.x + o.width / 2) {
+                    if (hy - hr < o.gapY - o.gap / 2 || hy + hr > o.gapY + o.gap / 2) {
+                        endGame();
+                        return;
+                    }
+                }
+            }
+
+            // Hit ceiling/floor
+            if (heli.y - heli.r < 0 || heli.y + heli.r > H) endGame();
+
+            // Particles (exhaust)
+            if (Math.random() < 0.6) {
+                particles.push({
+                    x: heli.x - heli.r * 0.8, y: heli.y + Math.random() * 6,
+                    vx: -Math.random() * 2 - 1, vy: Math.random() * 2 - 1, life: 8, color: '#ff8844'
+                });
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            const finalDist = Math.floor(score / 6);
+            document.getElementById('endScore').textContent = finalDist;
+            if (finalDist > bestScore) { bestScore = finalDist; localStorage.setItem('heli-best', bestScore); document.getElementById('best').textContent = bestScore; }
+            document.getElementById('endOverlay').style.display = 'block';
+            // Explosion particles
+            for (let i = 0; i < 30; i++) {
+                particles.push({
+                    x: heli.x, y: heli.y,
+                    vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 30, color: '#ff4444'
+                });
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#1a3a6c'); sky.addColorStop(1, '#2a5a8c');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Cave ceiling
+            ctx.fillStyle = '#2a1a0a';
+            for (let o of obstacles) {
+                // Top wall
+                ctx.fillStyle = '#3a2a1a';
+                ctx.fillRect(o.x - o.width / 2, 0, o.width, o.gapY - o.gap / 2);
+                // Bottom wall
+                ctx.fillRect(o.x - o.width / 2, o.gapY + o.gap / 2, o.width, H - (o.gapY + o.gap / 2));
+                // Highlight
+                ctx.fillStyle = '#4a3a2a';
+                ctx.fillRect(o.x - o.width / 2, o.gapY - o.gap / 2 - 4, o.width, 4);
+                ctx.fillRect(o.x - o.width / 2, o.gapY + o.gap / 2, o.width, 4);
+            }
+
+            // Particles
+            for (let p of particles) {
+                p.x += p.vx; p.y += p.vy; p.life--;
+                ctx.fillStyle = `rgba(${p.color === '#ff4444' ? '255,68,68' : '255,136,68'},${p.life / 30})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
+            }
+            particles = particles.filter(p => p.life > 0);
+
+            // Helicopter
+            if (!gameOver) {
+                const hx = heli.x, hy = heli.y;
+                // Rotor blur
+                const rotorAngle = Date.now() / 30;
+                ctx.strokeStyle = 'rgba(200,200,200,0.4)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.ellipse(hx, hy - heli.r * 0.6, heli.r * 1.8, 4, rotorAngle, 0, Math.PI * 2); ctx.stroke();
+                // Body
+                ctx.fillStyle = '#4488cc';
+                ctx.beginPath(); ctx.ellipse(hx, hy, heli.r, heli.r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+                // Cockpit
+                ctx.fillStyle = '#88ccff'; ctx.beginPath(); ctx.arc(hx + 3, hy - 2, heli.r * 0.4, 0, Math.PI * 2); ctx.fill();
+                // Tail
+                ctx.fillStyle = '#336699'; ctx.fillRect(hx - heli.r * 1.5, hy - 1, heli.r, 3);
+                // Tail rotor
+                ctx.fillStyle = '#888'; ctx.fillRect(hx - heli.r * 1.5, hy - 4, 2, 6);
+                // Skids
+                ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(hx - 6, hy + heli.r * 0.5); ctx.lineTo(hx - 8, hy + heli.r * 0.9); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(hx + 4, hy + heli.r * 0.5); ctx.lineTo(hx + 6, hy + heli.r * 0.9); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(hx - 10, hy + heli.r * 0.9); ctx.lineTo(hx + 8, hy + heli.r * 0.9); ctx.stroke();
+            }
+
+            // Distance
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(Math.floor(score / 6) + 'm', W - 10, 20);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        // Controls
+        document.addEventListener('keydown', e => {
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                e.preventDefault(); thrust = true;
+            }
+        });
+        document.addEventListener('keyup', e => {
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') thrust = false;
+        });
+
+        canvas.addEventListener('mousedown', e => { e.preventDefault(); thrust = true; });
+        canvas.addEventListener('mouseup', () => { thrust = false; });
+        canvas.addEventListener('mouseleave', () => { thrust = false; });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); thrust = true; });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); thrust = false; });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

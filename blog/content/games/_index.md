@@ -38,5 +38,10 @@ menu: main
 | 028 | 🎯 飞镖 | [开始游戏](/joy-game-study/play/028-darts/) |
 | 029 | 🧲 连连看 | [开始游戏](/joy-game-study/play/029-link/) |
 | 030 | 🎪 平衡球 | [开始游戏](/joy-game-study/play/030-balance/) |
+| 031 | 🎹 钢琴块 | [开始游戏](/joy-game-study/play/031-piano/) |
+| 032 | 🧩 拼图 | [开始游戏](/joy-game-study/play/032-puzzle/) |
+| 033 | 🌧️ 躲雨 | [开始游戏](/joy-game-study/play/033-rain/) |
+| 034 | 🎱 台球 | [开始游戏](/joy-game-study/play/034-pool/) |
+| 035 | 🚁 直升机 | [开始游戏](/joy-game-study/play/035-heli/) |
 
-> 进度：30 / 100 🎉
+> 进度：35 / 100 🎉

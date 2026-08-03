@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>031 - 钢琴块</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 6px; font-size: clamp(0.8em, 2.5vw, 0.95em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #fff; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎹 钢琴块 — #031</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info">💡 点击黑色方块得分 | 不要点白色方块 | 错过黑块或点错白块游戏结束</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 游戏结束</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const COLS = 4, ROWS = 5;
+        let W, H, CELL_H, score, bestScore, gameOver, tiles, speed, scrollY;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.5);
+            canvas.width = W; canvas.height = H;
+            CELL_H = H / ROWS;
+        }
+
+        function newGame() {
+            resize();
+            score = 0; gameOver = false; speed = 2.5; scrollY = 0;
+            bestScore = parseInt(localStorage.getItem('piano-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            tiles = [];
+            // Generate initial tiles
+            for (let r = 0; r < ROWS + 2; r++) {
+                tiles.push(generateRow());
+            }
+            loop();
+        }
+
+        function generateRow() {
+            const row = [];
+            const blackCol = Math.floor(Math.random() * COLS);
+            for (let c = 0; c < COLS; c++) {
+                row.push(c === blackCol ? 'black' : 'white');
+            }
+            return row;
+        }
+
+        function update() {
+            if (gameOver) return;
+            scrollY += speed;
+            speed = 2.5 + score / 50;
+            // Check if top row scrolled off
+            if (scrollY >= CELL_H) {
+                scrollY -= CELL_H;
+                const missedRow = tiles.shift();
+                // Check if missed a black tile
+                if (missedRow.some(t => t === 'black')) {
+                    endGame();
+                    return;
+                }
+                tiles.push(generateRow());
+            }
+        }
+
+        function clickTile(col) {
+            if (gameOver) return;
+            // Find the lowest visible tile in this column
+            const rowOffset = scrollY / CELL_H;
+            for (let r = 0; r < tiles.length; r++) {
+                const tileY = (r - rowOffset) * CELL_H + CELL_H;
+                if (tileY > 0 && tileY <= H) {
+                    if (tiles[r][col] === 'black') {
+                        tiles[r][col] = 'hit';
+                        score += 10;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('piano-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        // Speed boost visual
+                        speed = Math.min(15, 2.5 + score / 50);
+                        return;
+                    } else if (tiles[r][col] === 'white') {
+                        endGame();
+                        return;
+                    }
+                }
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            const cellW = W / COLS;
+            const rowOffset = scrollY / CELL_H;
+
+            for (let r = 0; r < tiles.length; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const x = c * cellW;
+                    const y = (r - rowOffset) * CELL_H;
+                    if (y + CELL_H < 0 || y > H) continue;
+
+                    if (tiles[r][c] === 'black') {
+                        ctx.fillStyle = '#111';
+                        ctx.fillRect(x + 1, y + 1, cellW - 2, CELL_H - 2);
+                        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                        ctx.fillRect(x + 1, y + 1, cellW - 2, 2);
+                    } else if (tiles[r][c] === 'hit') {
+                        ctx.fillStyle = '#444';
+                        ctx.fillRect(x + 1, y + 1, cellW - 2, CELL_H - 2);
+                    } else {
+                        ctx.fillStyle = '#f5f5f5';
+                        ctx.fillRect(x + 1, y + 1, cellW - 2, CELL_H - 2);
+                    }
+                    // Border
+                    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 0.5;
+                    ctx.strokeRect(x, y, cellW, CELL_H);
+                }
+            }
+
+            // Click indicator at bottom
+            ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(0, H - CELL_H * 0.4, W, CELL_H * 0.4);
+            ctx.fillStyle = '#999'; ctx.font = `${CELL_H * 0.25}px "Segoe UI"`; ctx.textAlign = 'center';
+            ctx.fillText('👆 点击黑色方块', W / 2, H - CELL_H * 0.12);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', e => {
+            const rect = canvas.getBoundingClientRect();
+            const col = Math.floor((e.clientX - rect.left) / (W / COLS));
+            if (col >= 0 && col < COLS) clickTile(col);
+        });
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const col = Math.floor((e.touches[0].clientX - rect.left) / (W / COLS));
+            if (col >= 0 && col < COLS) clickTile(col);
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

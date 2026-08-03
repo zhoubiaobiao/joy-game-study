@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>033 - 躲雨</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a2a40; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌧️ 躲雨 — #033</h1>
+    <div class="top-bar">
+        <span>时间：<span id="score">0</span>s</span>
+        <span>最佳：<span id="best">0</span>s</span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn" id="pauseBtn">⏯ 暂停</button>
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 方向键/←→/AD 移动 | 手机触摸拖动 | 躲避雨滴存活越久越好</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💧 被雨淋到了！</h2>
+        <p>存活：<strong id="endScore">0</strong>秒</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, player, drops, score, bestScore, gameOver, paused, spawnRate, animId;
+        let keys = {};
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.4);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            player = { x: W / 2, y: H - 50, w: 30, h: 30 };
+            drops = [];
+            score = 0; gameOver = false; paused = false; spawnRate = 0.6;
+            bestScore = parseInt(localStorage.getItem('rain-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('pauseBtn').textContent = '⏯ 暂停';
+            keys = {};
+            loop();
+            // Score timer
+            var scoreInterval = setInterval(() => {
+                if (gameOver || paused) return;
+                score++;
+                document.getElementById('score').textContent = score;
+                if (score > bestScore) { bestScore = score; localStorage.setItem('rain-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                spawnRate = 0.6 + score / 30;
+            }, 1000);
+        }
+
+        function update() {
+            if (gameOver || paused) return;
+            // Move player
+            const speed = 5;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.x -= speed;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x += speed;
+            player.x = Math.max(player.w / 2, Math.min(W - player.w / 2, player.x));
+
+            // Spawn drops
+            if (Math.random() < spawnRate * 0.06) {
+                drops.push({
+                    x: Math.random() * W,
+                    y: -10,
+                    speed: 2 + Math.random() * 4 + score / 20,
+                    length: 10 + Math.random() * 15,
+                    width: 2 + Math.random() * 2
+                });
+            }
+
+            // Update drops
+            for (let d of drops) {
+                d.y += d.speed;
+                // Splash on ground
+                if (d.y > H) {
+                    d.y = -10;
+                    d.x = Math.random() * W;
+                }
+            }
+
+            // Collision
+            for (let d of drops) {
+                if (d.x > player.x - player.w / 2 && d.x < player.x + player.w / 2 &&
+                    d.y > player.y - player.h / 2 && d.y < player.y + player.h / 2) {
+                    endGame();
+                    return;
+                }
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+            // Splash particles at player
+            for (let i = 0; i < 20; i++) {
+                drops.push({
+                    x: player.x + (Math.random() - 0.5) * 40,
+                    y: player.y + (Math.random() - 0.5) * 20,
+                    speed: Math.random() * 3,
+                    length: Math.random() * 5,
+                    width: 1,
+                    splash: true
+                });
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Stormy sky
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#1a2a40'); sky.addColorStop(1, '#2a3a50');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Lightning flash (random)
+            if (Math.random() < 0.02 && !gameOver) {
+                ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(0, 0, W, H);
+            }
+
+            // Ground
+            ctx.fillStyle = '#3a5a3a'; ctx.fillRect(0, H - 8, W, 8);
+            // Puddles
+            ctx.fillStyle = '#4a6a8a';
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath(); ctx.ellipse(W * 0.1 + i * W * 0.2, H - 2, W * 0.08, 3, 0, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Rain drops
+            ctx.strokeStyle = '#88aacc';
+            ctx.lineWidth = 1;
+            for (let d of drops) {
+                ctx.strokeStyle = d.splash ? '#aaccee' : '#88aacc';
+                ctx.lineWidth = d.width;
+                ctx.beginPath();
+                ctx.moveTo(d.x, d.y);
+                ctx.lineTo(d.x - 1, d.y + d.length);
+                ctx.stroke();
+            }
+
+            // Player (umbrella character)
+            const px = player.x, py = player.y;
+            // Body
+            ctx.fillStyle = '#ffd700'; ctx.fillRect(px - 8, py + 2, 16, 14);
+            // Head
+            ctx.fillStyle = '#ffcc88'; ctx.beginPath(); ctx.arc(px, py - 2, 8, 0, Math.PI * 2); ctx.fill();
+            // Umbrella
+            ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.arc(px, py - 16, 18, Math.PI, 0); ctx.fill();
+            ctx.fillStyle = '#cc0000';
+            ctx.fillRect(px - 1, py - 16, 2, 6);
+            // Umbrella top
+            ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.arc(px, py - 16, 4, 0, Math.PI * 2); ctx.fill();
+
+            if (paused) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(H*0.05)}px "Segoe UI"`; ctx.textAlign = 'center';
+                ctx.fillText('⏸', W / 2, H / 2); ctx.textAlign = 'start';
+            }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        function togglePause() { if (gameOver) return; paused = !paused; document.getElementById('pauseBtn').textContent = paused ? '▶ 继续' : '⏯ 暂停'; if (!paused) loop(); }
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; if (e.key === 'p' || e.key === 'P') togglePause(); });
+        document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // Touch controls
+        let touchX = null;
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            touchX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            player.x = touchX;
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            touchX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            player.x = touchX;
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); });
+        canvas.addEventListener('mousemove', e => {
+            if (e.buttons !== 1) return;
+            const rect = canvas.getBoundingClientRect();
+            player.x = (e.clientX - rect.left) * (W / rect.width);
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
