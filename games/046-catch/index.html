@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>046 - 接水果</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: linear-gradient(#87CEEB, #E8F5E9); }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🧺 接水果 — #046</h1>
+    <div class="top-bar">
+        <span>🍎 <span id="score">0</span></span>
+        <span>❤️ <span id="lives">3</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 鼠标/触摸 移动篮子 | 接水果得分 | 💣 炸弹扣命 | ⭐ 加命道具</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💔 没命了！</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, basket, items, particles, score, lives, bestScore, gameOver, animId;
+        let spawnTimer, speed;
+
+        const FRUITS = [
+            { emoji: '🍎', value: 10, color: '#ff4444', r: 12, weight: 40 },
+            { emoji: '🍊', value: 15, color: '#ff8844', r: 12, weight: 25 },
+            { emoji: '🍇', value: 20, color: '#8844ff', r: 10, weight: 15 },
+            { emoji: '🍉', value: 25, color: '#44ff44', r: 16, weight: 10 },
+            { emoji: '💰', value: 50, color: '#ffd700', r: 10, weight: 5 },
+            { emoji: '⭐', value: 0, color: '#ffd700', r: 11, weight: 5, isLife: true },
+            { emoji: '💣', value: -1, color: '#333', r: 13, weight: 10, isBomb: true },
+        ];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.4);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; lives = 3; gameOver = false; speed = 1.5;
+            bestScore = parseInt(localStorage.getItem('catch-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('lives').textContent = '3';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            basket = { x: W / 2, w: 70, h: 30 };
+            items = []; particles = []; spawnTimer = 0;
+            loop();
+        }
+
+        function spawnItem() {
+            const total = FRUITS.reduce((s, f) => s + f.weight, 0);
+            let r = Math.random() * total;
+            let type;
+            for (const f of FRUITS) { r -= f.weight; if (r <= 0) { type = f; break; } }
+            type = type || FRUITS[0];
+            items.push({ x: 20 + Math.random() * (W - 40), y: -20, vy: speed + Math.random() * 1.5, type, r: type.r });
+        }
+
+        function update() {
+            if (gameOver) return;
+            speed = 1.5 + score / 200;
+            if (speed > 7) speed = 7;
+
+            spawnTimer++;
+            if (spawnTimer >= Math.max(15, 50 - score / 20)) { spawnItem(); spawnTimer = 0; }
+
+            for (const item of items) {
+                item.y += item.vy;
+                if (!item.caught && item.y + item.r > H - basket.h && item.y - item.r < H &&
+                    Math.abs(item.x - basket.x) < basket.w / 2 + item.r) {
+                    item.caught = true;
+                    if (item.type.isBomb) {
+                        lives--;
+                        document.getElementById('lives').textContent = Math.max(0, lives);
+                        for (let i = 0; i < 15; i++) particles.push({ x: item.x, y: item.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 4 - 2, life: 20, color: '#ff4444' });
+                        if (lives <= 0) { endGame(); return; }
+                    } else {
+                        score += item.type.value;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('catch-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        if (item.type.isLife) { lives++; document.getElementById('lives').textContent = lives; }
+                        for (let i = 0; i < 8; i++) particles.push({ x: item.x, y: item.y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 3 - 1, life: 12, color: item.type.color });
+                    }
+                }
+            }
+            items = items.filter(i => !i.caught && i.y < H + 30);
+
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#87CEEB'); sky.addColorStop(0.7, '#E8F5E9'); sky.addColorStop(1, '#7cb342');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Trees
+            ctx.fillStyle = '#4a7c2e'; ctx.beginPath(); ctx.arc(W * 0.12, H * 0.15, 30, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#3d6a1e'; ctx.beginPath(); ctx.arc(W * 0.88, H * 0.12, 35, 0, Math.PI * 2); ctx.fill();
+
+            // Falling items
+            for (const item of items) {
+                if (item.caught) continue;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.beginPath(); ctx.arc(item.x + 2, item.y + 2, item.r, 0, Math.PI * 2); ctx.fill();
+                // Body
+                ctx.fillStyle = item.type.color; ctx.beginPath(); ctx.arc(item.x, item.y, item.r, 0, Math.PI * 2); ctx.fill();
+                // Emoji
+                ctx.font = `${item.r * 1.5}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(item.type.emoji, item.x, item.y);
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(${p.color === '#ff4444' ? '255,68,68' : '255,215,0'},${p.life / 20})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Ground
+            ctx.fillStyle = '#7cb342'; ctx.fillRect(0, H - basket.h - 4, W, basket.h + 8);
+            ctx.fillStyle = '#558b2f'; ctx.fillRect(0, H - basket.h + 4, W, basket.h + 4);
+
+            // Basket
+            const bx = basket.x - basket.w / 2, by = H - basket.h;
+            ctx.fillStyle = '#8B6914'; ctx.beginPath();
+            ctx.moveTo(bx, by + basket.h); ctx.lineTo(bx + 8, by); ctx.lineTo(bx + basket.w - 8, by); ctx.lineTo(bx + basket.w, by + basket.h);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#5D3310'; ctx.lineWidth = 2; ctx.stroke();
+            // Basket rim
+            ctx.fillStyle = '#A0722A'; ctx.fillRect(bx + 5, by - 3, basket.w - 10, 6);
+
+            // Catch zone indicator
+            ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.beginPath(); ctx.arc(basket.x, H - 40, 15, 0, Math.PI * 2); ctx.fill();
+
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (score > bestScore) { bestScore = score; localStorage.setItem('catch-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('mousemove', e => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            basket.x = (e.clientX - rect.left) * (W / rect.width);
+            basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, basket.x));
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            basket.x = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            basket.x = Math.max(basket.w / 2, Math.min(W - basket.w / 2, basket.x));
+        });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

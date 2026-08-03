@@ -48,5 +48,15 @@ menu: main
 | 038 | 🎪 套圈 | [开始游戏](/joy-game-study/play/038-ring/) |
 | 039 | 🏹 弹弓 | [开始游戏](/joy-game-study/play/039-slingshot/) |
 | 040 | 🎡 幸运转盘 | [开始游戏](/joy-game-study/play/040-wheel/) |
+| 041 | 🪙 黄金矿工 | [开始游戏](/joy-game-study/play/041-gold-miner/) |
+| 042 | ✈️ 飞机大战 | [开始游戏](/joy-game-study/play/042-shooter/) |
+| 043 | 🏎️ 极速飞车 | [开始游戏](/joy-game-study/play/043-racing/) |
+| 044 | 🔫 坦克大战 | [开始游戏](/joy-game-study/play/044-tanks/) |
+| 045 | 📚 叠塔高手 | [开始游戏](/joy-game-study/play/045-stack/) |
+| 046 | 🧺 接水果 | [开始游戏](/joy-game-study/play/046-catch/) |
+| 047 | 🚀 火箭着陆 | [开始游戏](/joy-game-study/play/047-lander/) |
+| 048 | 🏒 冰球对战 | [开始游戏](/joy-game-study/play/048-airhockey/) |
+| 049 | 🟢 球球大作战 | [开始游戏](/joy-game-study/play/049-blob/) |
+| 050 | 🐍 贪吃蛇对决 | [开始游戏](/joy-game-study/play/050-snakeduel/) |
 
-> 进度：40 / 100 🎉
+> 进度：50 / 100 🎉

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>045 - 叠塔高手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: linear-gradient(#1a1a3e, #0a0a1e); }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>📚 叠塔高手 — #045</h1>
+    <div class="top-bar">
+        <span>📏 <span id="score">0</span>层</span>
+        <span>🎯 连击 <span id="combo">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 点击/空格 停止移动方块 | 完美对齐额外加分 | 切掉的部分越多方块越小</div>
+    <div class="overlay" id="endOverlay">
+        <h2>📚 塔倒了！</h2>
+        <p>层数：<strong id="endScore">0</strong> | 最高连击：<strong id="endCombo">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, blocks, movingBlock, score, combo, bestScore, gameOver, animId;
+        let camY, targetCamY;
+
+        const COLORS = ['#ff4444','#ffd700','#44ff44','#44aaff','#ff44ff','#ff8844','#00d4ff','#ff6644','#aaff44','#ff4488'];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.5);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; combo = 0; gameOver = false; camY = 0; targetCamY = 0;
+            bestScore = parseInt(localStorage.getItem('stack-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('combo').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            blocks = [{ x: W / 2, y: 0, w: W * 0.6, h: 18, color: '#fff' }];
+            spawnBlock();
+            loop();
+        }
+
+        function spawnBlock() {
+            const lastBlock = blocks[blocks.length - 1];
+            const bw = lastBlock ? lastBlock.w : W * 0.6;
+            const by = lastBlock ? lastBlock.y - 22 : 0;
+            const dir = Math.random() > 0.5 ? 1 : -1;
+            const startX = dir > 0 ? -bw / 2 : W + bw / 2;
+            movingBlock = {
+                x: startX, y: by, w: bw, h: 18,
+                dir, speed: 2 + score * 0.1,
+                color: COLORS[score % COLORS.length]
+            };
+        }
+
+        function placeBlock() {
+            if (gameOver || !movingBlock) return;
+            const lastBlock = blocks[blocks.length - 1];
+            if (!lastBlock) return;
+
+            // Calculate overlap
+            const overlapLeft = Math.max(movingBlock.x - movingBlock.w / 2, lastBlock.x - lastBlock.w / 2);
+            const overlapRight = Math.min(movingBlock.x + movingBlock.w / 2, lastBlock.x + lastBlock.w / 2);
+            const overlapW = overlapRight - overlapLeft;
+
+            if (overlapW <= 1) {
+                // Miss!
+                endGame();
+                return;
+            }
+
+            const newW = overlapW;
+            const newX = (overlapLeft + overlapRight) / 2;
+            const perfect = Math.abs(newW - lastBlock.w) < 3;
+
+            if (perfect) {
+                combo++;
+                document.getElementById('combo').textContent = combo;
+                newW === lastBlock.w; // Keep same width on perfect
+                // Bonus particles stored for drawing
+                movingBlock.perfect = true;
+            } else {
+                combo = 0;
+                document.getElementById('combo').textContent = '0';
+            }
+
+            const block = {
+                x: newX, y: movingBlock.y, w: newW, h: 18,
+                color: perfect ? '#ffd700' : movingBlock.color,
+                perfect
+            };
+            blocks.push(block);
+            score++;
+            document.getElementById('score').textContent = score;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('stack-best', bestScore); document.getElementById('best').textContent = bestScore; }
+
+            // Cut-off piece
+            if (!perfect && movingBlock.x !== newX) {
+                const cutX = movingBlock.x > newX ? (movingBlock.x + movingBlock.w / 2 + newX + newW / 2) / 2 : (movingBlock.x - movingBlock.w / 2 + newX - newW / 2) / 2;
+                const cutW = movingBlock.w - newW;
+                blocks.push({ x: cutX, y: movingBlock.y, w: cutW, h: 18, color: '#333', falling: true, vy: 0 });
+            }
+
+            targetCamY = Math.max(0, (score - 3) * 22);
+            spawnBlock();
+        }
+
+        function update() {
+            if (gameOver) return;
+            // Move block side to side
+            if (movingBlock) {
+                movingBlock.x += movingBlock.dir * movingBlock.speed;
+                if (movingBlock.x + movingBlock.w / 2 > W) movingBlock.dir = -1;
+                if (movingBlock.x - movingBlock.w / 2 < 0) movingBlock.dir = 1;
+            }
+
+            // Camera smooth
+            camY += (targetCamY - camY) * 0.1;
+
+            // Falling blocks
+            for (const b of blocks) {
+                if (b.falling) { b.vy += 0.5; b.y += b.vy; }
+            }
+            blocks = blocks.filter(b => !b.falling || b.y < H + 50);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#0a0a1e'; ctx.fillRect(0, 0, W, H);
+
+            ctx.save();
+            ctx.translate(0, camY);
+
+            // Placed blocks
+            const baseY = H * 0.85;
+            for (const b of blocks) {
+                const screenY = baseY - b.y;
+                if (screenY > H + 50 || screenY < -50) continue;
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(b.x - b.w / 2 + 3, screenY + 3, b.w, b.h);
+
+                // 3D side
+                ctx.fillStyle = b.perfect ? '#ffd700' : b.color;
+                ctx.fillRect(b.x - b.w / 2, screenY, b.w, b.h);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(b.x - b.w / 2, screenY + b.h, b.w, 4);
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(b.x - b.w / 2, screenY, b.w, 3);
+
+                // Perfect glow
+                if (b.perfect) {
+                    ctx.strokeStyle = 'rgba(255,215,0,0.5)'; ctx.lineWidth = 2;
+                    ctx.strokeRect(b.x - b.w / 2 - 2, screenY - 2, b.w + 4, b.h + 4 + 4);
+                }
+            }
+
+            // Moving block
+            if (movingBlock && !gameOver) {
+                const screenY = baseY - movingBlock.y;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(movingBlock.x - movingBlock.w / 2 + 3, screenY + 3, movingBlock.w, movingBlock.h);
+                // Block
+                ctx.fillStyle = movingBlock.color;
+                ctx.fillRect(movingBlock.x - movingBlock.w / 2, screenY, movingBlock.w, movingBlock.h);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(movingBlock.x - movingBlock.w / 2, screenY + movingBlock.h, movingBlock.w, 4);
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(movingBlock.x - movingBlock.w / 2, screenY, movingBlock.w, 3);
+            }
+
+            ctx.restore();
+
+            // Combo indicator
+            if (combo >= 3) {
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 20px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('🔥 x' + combo + ' 连击!', W / 2, H * 0.3);
+            }
+
+            // Base floor
+            ctx.fillStyle = '#fff'; ctx.fillRect(W * 0.15, H * 0.85 + camY, W * 0.7, 6);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            const maxCombo = Math.max(combo, parseInt(document.getElementById('endCombo').textContent || '0'));
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endCombo').textContent = maxCombo;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (score > bestScore) { bestScore = score; localStorage.setItem('stack-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', placeBlock);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); placeBlock(); });
+        document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); placeBlock(); } });
+        document.getElementById('newBtn').addEventListener('click', newGame);
+
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

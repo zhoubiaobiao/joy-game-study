@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>047 - 火箭着陆</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #000; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🚀 火箭着陆 — #047</h1>
+    <div class="top-bar">
+        <span>🛬 <span id="score">0</span></span>
+        <span>⛽ <span id="fuel">100</span>%</span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 按住空格/点击 启动推进器 | 平稳降落在平台上 | 速度<1.5 完美着陆</div>
+    <div class="overlay" id="endOverlay">
+        <h2 id="endTitle">💥 坠毁！</h2>
+        <p>着陆次数：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, lander, terrain, pads, score, bestScore, fuel, gameOver, animId;
+        let thrusting, particles, stars;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.1);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function generateTerrain() {
+            terrain = [];
+            pads = [];
+            const segments = 40;
+            const segW = W / segments;
+            for (let i = 0; i <= segments; i++) {
+                const x = i * segW;
+                const baseH = H * 0.5 + Math.sin(i * 0.3) * H * 0.2 + Math.sin(i * 0.7) * H * 0.1 + Math.cos(i * 0.15) * H * 0.15;
+                terrain.push({ x, y: baseH + Math.random() * 10 });
+            }
+            // Flatten some areas for landing pads
+            for (let p = 0; p < 2; p++) {
+                const start = 5 + Math.floor(Math.random() * (segments - 15));
+                const padY = terrain[start].y;
+                for (let i = start; i < start + 4; i++) {
+                    terrain[i].y = padY;
+                }
+                pads.push({ x: terrain[start + 2].x, y: padY, w: segW * 4 });
+            }
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; fuel = 100; gameOver = false;
+            bestScore = parseInt(localStorage.getItem('lander-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('fuel').textContent = '100';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            thrusting = false; particles = [];
+            generateTerrain();
+            stars = [];
+            for (let i = 0; i < 80; i++) stars.push({ x: Math.random() * W, y: Math.random() * H * 0.6, r: Math.random() * 1.5 + 0.5 });
+            // Place lander at random position at top
+            lander = { x: W * 0.3 + Math.random() * W * 0.4, y: H * 0.1 + Math.random() * H * 0.15, vx: (Math.random() - 0.5) * 1.5, vy: 0.3 + Math.random(), angle: 0, r: 10, landed: false };
+            loop();
+        }
+
+        function update() {
+            if (gameOver || lander.landed) return;
+
+            // Gravity
+            lander.vy += 0.08;
+
+            // Thrust
+            if (thrusting && fuel > 0) {
+                fuel -= 0.3;
+                document.getElementById('fuel').textContent = Math.max(0, Math.floor(fuel));
+                lander.vy -= 0.18;
+                // Stabilize horizontal
+                if (Math.abs(lander.vx) > 0.3) lander.vx *= 0.95;
+                // Particles
+                particles.push({ x: lander.x, y: lander.y + 8, vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 4, life: 10 + Math.random() * 8 });
+            }
+
+            lander.x += lander.vx;
+            lander.y += lander.vy;
+
+            // Screen wrap horizontally
+            if (lander.x > W + 10) lander.x = -10;
+            if (lander.x < -10) lander.x = W + 10;
+
+            // Terrain collision
+            const segW = W / (terrain.length - 1);
+            const idx = Math.floor(lander.x / segW);
+            if (idx >= 0 && idx < terrain.length - 1) {
+                const t1 = terrain[idx], t2 = terrain[idx + 1];
+                const groundY = t1.y + (t2.y - t1.y) * ((lander.x - t1.x) / (t2.x - t1.x));
+                if (lander.y + lander.r >= groundY) {
+                    lander.y = groundY - lander.r;
+                    // Check landing
+                    const onPad = pads.some(p => Math.abs(lander.x - p.x) < p.w / 2);
+                    const speed = Math.abs(lander.vy);
+                    const hSpeed = Math.abs(lander.vx);
+
+                    if (onPad && speed < 2 && hSpeed < 1.5) {
+                        // Perfect landing!
+                        lander.landed = true;
+                        score++;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('lander-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        const pts = Math.floor((speed < 0.5 ? 200 : 100) + fuel);
+                        document.getElementById('endTitle').textContent = speed < 0.5 ? '🌟 完美着陆！' : '✅ 成功着陆！';
+                        document.getElementById('endScore').textContent = score + ' (奖励+' + pts + '分)';
+                        document.getElementById('endOverlay').style.display = 'block';
+                        gameOver = true;
+                    } else {
+                        // Crash!
+                        for (let i = 0; i < 20; i++) particles.push({ x: lander.x, y: lander.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 4 - 2, life: 15 + Math.random() * 20, color: '#ff4444' });
+                        lander.landed = true; gameOver = true;
+                        document.getElementById('endTitle').textContent = onPad ? '💨 速度太快！' : '💥 坠毁！';
+                        document.getElementById('endScore').textContent = score;
+                        document.getElementById('endOverlay').style.display = 'block';
+                    }
+                }
+            }
+
+            // Update particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Space
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+            // Stars
+            for (const s of stars) {
+                ctx.fillStyle = `rgba(255,255,255,${0.3 + s.r / 3})`;
+                ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Earth/planet in distance
+            ctx.fillStyle = '#1a3a6a'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.15, 35, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#2a5a8a'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.15, 32, 0, Math.PI * 2); ctx.fill();
+
+            // Terrain
+            ctx.fillStyle = '#555'; ctx.beginPath();
+            ctx.moveTo(0, H);
+            for (let i = 0; i < terrain.length; i++) ctx.lineTo(terrain[i].x, terrain[i].y);
+            ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+            // Terrain surface
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.beginPath();
+            for (let i = 0; i < terrain.length; i++) i === 0 ? ctx.moveTo(terrain[i].x, terrain[i].y) : ctx.lineTo(terrain[i].x, terrain[i].y);
+            ctx.stroke();
+
+            // Landing pads
+            for (const pad of pads) {
+                const segW = W / (terrain.length - 1);
+                const idx = Math.floor(pad.x / segW);
+                const py = idx >= 0 && idx < terrain.length ? terrain[idx].y : pad.y;
+                ctx.fillStyle = '#44ff44'; ctx.fillRect(pad.x - pad.w / 2, py - 3, pad.w, 6);
+                // Beacon
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(pad.x, py - 12, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,215,0,0.3)'; ctx.beginPath(); ctx.arc(pad.x, py - 12, 8, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Particles
+            for (const p of particles) {
+                const alpha = p.life / (p.color === '#ff4444' ? 35 : 15);
+                ctx.fillStyle = p.color === '#ff4444' ? `rgba(255,68,68,${alpha})` : `rgba(255,200,50,${alpha})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.color === '#ff4444' ? 2.5 : 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Lander
+            ctx.save(); ctx.translate(lander.x, lander.y);
+            // Body
+            ctx.fillStyle = '#ccc'; ctx.beginPath();
+            ctx.moveTo(0, -lander.r); ctx.lineTo(-lander.r * 0.7, lander.r * 0.6); ctx.lineTo(lander.r * 0.7, lander.r * 0.6);
+            ctx.closePath(); ctx.fill();
+            // Window
+            ctx.fillStyle = '#44aaff'; ctx.beginPath(); ctx.arc(0, -2, lander.r * 0.35, 0, Math.PI * 2); ctx.fill();
+            // Legs
+            ctx.strokeStyle = '#aaa'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(-lander.r * 0.6, lander.r * 0.2); ctx.lineTo(-lander.r * 0.8, lander.r * 0.8); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(lander.r * 0.6, lander.r * 0.2); ctx.lineTo(lander.r * 0.8, lander.r * 0.8); ctx.stroke();
+            // Flame when thrusting
+            if (thrusting && fuel > 0) {
+                ctx.fillStyle = `rgba(255,150,30,${0.6 + Math.random() * 0.4})`;
+                ctx.beginPath(); ctx.moveTo(-lander.r * 0.3, lander.r * 0.5); ctx.lineTo(0, lander.r * 1.2 + Math.random() * 6); ctx.lineTo(lander.r * 0.3, lander.r * 0.5);
+                ctx.closePath(); ctx.fill();
+            }
+            ctx.restore();
+
+            // Speed indicator
+            const speed = Math.sqrt(lander.vx * lander.vx + lander.vy * lander.vy);
+            ctx.fillStyle = speed < 2 ? '#44ff44' : speed < 5 ? '#ffd700' : '#ff4444';
+            ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('↓ ' + speed.toFixed(1) + ' m/s', W - 10, 18);
+            // Horizontal speed
+            ctx.fillStyle = Math.abs(lander.vx) < 1.5 ? '#44ff44' : '#ffd700';
+            ctx.fillText('↔ ' + lander.vx.toFixed(1) + ' m/s', W - 10, 34);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); else {
+            // Still draw one more frame for particles
+            if (particles.length > 0) { update(); draw(); setTimeout(() => { if (particles.length > 0) requestAnimationFrame(loop); }, 100); }
+        }}
+
+        // Controls
+        document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); thrusting = true; } });
+        document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); thrusting = false; } });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); lander.vx -= 0.1; }
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); lander.vx += 0.1; }
+        });
+
+        canvas.addEventListener('mousedown', () => { thrusting = true; });
+        canvas.addEventListener('mouseup', () => { thrusting = false; });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); thrusting = true; });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); thrusting = false; });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

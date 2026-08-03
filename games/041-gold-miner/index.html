@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>041 - 黄金矿工</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🪙 黄金矿工 — #041</h1>
+    <div class="top-bar">
+        <span>💰 <span id="score">0</span></span>
+        <span>🎯 关卡 <span id="level">1</span></span>
+        <span>⏱ <span id="timer">60</span>s</span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 点击/空格放钩子 | 抓住金矿自动拉回 | 大金块重拉得慢 | 💎钻石最值钱</div>
+    <div class="overlay" id="endOverlay">
+        <h2 id="endTitle">⏰ 时间到！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 关卡：<strong id="endLevel">1</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, hookX, hookY, hookAngle, hookLen, hookState, hookSpeed, targetItem;
+        let score, level, timeLeft, bestScore, gameOver, animId;
+        let items, timerInterval;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.2);
+            canvas.width = W; canvas.height = H;
+            hookX = W / 2; hookY = H * 0.15;
+        }
+
+        const ITEM_TYPES = [
+            { name: '💎钻石', value: 500, size: 8, color: '#00d4ff', weight: 0.5, prob: 5 },
+            { name: '🪨石头', value: 20, size: 18, color: '#888', weight: 3, prob: 25 },
+            { name: '🪙金币', value: 100, size: 14, color: '#ffd700', weight: 1.5, prob: 20 },
+            { name: '🥇金块', value: 200, size: 16, color: '#ff8c00', weight: 2, prob: 20 },
+            { name: '🐁老鼠', value: 50, size: 10, color: '#aaa', weight: 0.8, prob: 15 },
+            { name: '💎水晶', value: 300, size: 10, color: '#ff44ff', weight: 0.8, prob: 10 },
+            { name: '💣炸弹', value: -100, size: 12, color: '#ff4444', weight: 1, prob: 5 },
+        ];
+
+        function randItem() {
+            const total = ITEM_TYPES.reduce((s, t) => s + t.prob, 0);
+            let r = Math.random() * total;
+            for (const t of ITEM_TYPES) { r -= t.prob; if (r <= 0) return { ...t }; }
+            return { ...ITEM_TYPES[2] };
+        }
+
+        function spawnItems() {
+            items = [];
+            const count = 5 + level * 2;
+            for (let i = 0; i < count; i++) {
+                const item = randItem();
+                item.x = W * 0.1 + Math.random() * W * 0.8;
+                item.y = H * 0.3 + Math.random() * H * 0.6;
+                // Prevent overlap
+                let tries = 0;
+                while (items.some(o => Math.hypot(o.x - item.x, o.y - item.y) < o.size + item.size + 8) && tries < 20) {
+                    item.x = W * 0.1 + Math.random() * W * 0.8;
+                    item.y = H * 0.3 + Math.random() * H * 0.6;
+                    tries++;
+                }
+                items.push(item);
+            }
+        }
+
+        function newGame() {
+            clearInterval(timerInterval);
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; level = 1; gameOver = false; timeLeft = 60;
+            bestScore = parseInt(localStorage.getItem('goldminer-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('level').textContent = '1';
+            document.getElementById('timer').textContent = '60';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            hookAngle = 0; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null;
+            spawnItems();
+            startTimer();
+            loop();
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (gameOver) return;
+                timeLeft -= 0.1;
+                document.getElementById('timer').textContent = Math.ceil(Math.max(0, timeLeft));
+                if (timeLeft <= 0) { timeUp(); }
+            }, 100);
+        }
+
+        function timeUp() {
+            gameOver = true;
+            clearInterval(timerInterval);
+            document.getElementById('endTitle').textContent = '⏰ 时间到！';
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endLevel').textContent = level;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (score > bestScore) { bestScore = score; localStorage.setItem('goldminer-best', bestScore); }
+        }
+
+        function nextLevel() {
+            level++;
+            timeLeft = Math.min(90, timeLeft + 15);
+            document.getElementById('level').textContent = level;
+            document.getElementById('timer').textContent = Math.ceil(timeLeft);
+            hookAngle = 0; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null;
+            spawnItems();
+        }
+
+        function dropHook() {
+            if (hookState !== 'swing' || gameOver) return;
+            hookState = 'extend';
+            hookSpeed = 4;
+        }
+
+        function update() {
+            if (gameOver) return;
+            // Swing
+            if (hookState === 'swing') {
+                hookAngle += 0.04;
+                if (hookAngle > Math.PI || hookAngle < -0.3) hookAngle = Math.max(-0.3, Math.min(Math.PI, hookAngle));
+            }
+            // Extend
+            if (hookState === 'extend') {
+                hookLen += hookSpeed;
+                const hx = hookX + Math.cos(hookAngle) * hookLen;
+                const hy = hookY + Math.sin(hookAngle) * hookLen;
+                // Check collision
+                for (const item of items) {
+                    if (item.caught) continue;
+                    if (Math.hypot(hx - item.x, hy - item.y) < item.size + 8) {
+                        item.caught = true;
+                        targetItem = item;
+                        hookState = 'retract';
+                        hookSpeed = 2 / item.weight;
+                        break;
+                    }
+                }
+                if (hookState === 'extend' && (hx < -20 || hx > W + 20 || hy > H + 20)) {
+                    hookState = 'retract';
+                    hookSpeed = 3;
+                }
+            }
+            // Retract
+            if (hookState === 'retract') {
+                hookLen -= hookSpeed;
+                if (targetItem) {
+                    targetItem.x = hookX + Math.cos(hookAngle) * (hookLen - targetItem.size);
+                    targetItem.y = hookY + Math.sin(hookAngle) * (hookLen - targetItem.size);
+                }
+                if (hookLen <= 40) {
+                    if (targetItem) {
+                        score += targetItem.value;
+                        if (score < 0) score = 0;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('goldminer-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        targetItem = null;
+                    }
+                    hookState = 'swing'; hookLen = 40; hookSpeed = 0;
+                    // Check level clear
+                    if (items.every(i => i.caught)) {
+                        nextLevel();
+                    }
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Cave background
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#3d2b1f'); grad.addColorStop(0.2, '#2d1f0e'); grad.addColorStop(1, '#1a0f05');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+            // Ground
+            ctx.fillStyle = '#5d3a1a'; ctx.fillRect(0, H * 0.28, W, H * 0.72);
+            ctx.fillStyle = '#4a2e15'; ctx.fillRect(0, H * 0.32, W, H * 0.68);
+
+            // Items
+            for (const item of items) {
+                if (item.caught && item !== targetItem) continue;
+                const ix = targetItem === item ? item.x : item.x;
+                const iy = targetItem === item ? item.y : item.y;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(ix + 2, iy + 2, item.size, 0, Math.PI * 2); ctx.fill();
+                // Body
+                ctx.fillStyle = item.color; ctx.beginPath(); ctx.arc(ix, iy, item.size, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(item.size)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                const emoji = item.name.slice(0, 2);
+                ctx.fillText(emoji, ix, iy);
+                // Value label
+                if (!item.caught) {
+                    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 9px "Segoe UI"'; ctx.textAlign = 'center';
+                    ctx.fillText(item.value, ix, iy + item.size + 10);
+                }
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+            }
+
+            // Rope
+            const hx = hookX + Math.cos(hookAngle) * hookLen;
+            const hy = hookY + Math.sin(hookAngle) * hookLen;
+            ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(hookX, hookY); ctx.lineTo(hx, hy); ctx.stroke();
+
+            // Hook
+            ctx.fillStyle = '#888'; ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#666'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.stroke();
+
+            // Machine at top
+            ctx.fillStyle = '#666'; ctx.fillRect(hookX - 25, hookY - 10, 50, 20);
+            ctx.fillStyle = '#888'; ctx.beginPath(); ctx.arc(hookX, hookY - 10, 18, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(hookX, hookY - 10, 10, 0, Math.PI * 2); ctx.fill();
+
+            // Hook state indicator
+            ctx.fillStyle = hookState === 'swing' ? '#44ff44' : '#ff4444';
+            ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(hookState === 'swing' ? '🖱️ 点击放钩' : targetItem ? '🎯 抓到!' : '⏳ 回收中', hookX, hookY + 30);
+            ctx.textAlign = 'start';
+
+            // Level goal
+            ctx.fillStyle = '#aaa'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(`目标: $${(level+1)*500}`, W - 10, H - 10);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', dropHook);
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); dropHook(); });
+        document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); dropHook(); } });
+        document.getElementById('newBtn').addEventListener('click', newGame);
+
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

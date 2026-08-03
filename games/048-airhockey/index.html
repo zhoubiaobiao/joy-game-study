@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>048 - 冰球对战</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 420px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a3a5a; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🏒 冰球对战 — #048</h1>
+    <div class="top-bar">
+        <span>🔵 P1: <span id="score1">0</span></span>
+        <span>🔴 P2: <span id="score2">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 P1: WASD | P2: 方向键 | 把球打进对方球门 | 先7分获胜</div>
+    <div class="overlay" id="endOverlay">
+        <h2 id="endTitle">🏆 获胜！</h2>
+        <p>P1 <span id="endScore1">0</span> : <span id="endScore2">0</span> P2</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, p1, p2, puck, score1, score2, gameOver, animId;
+        let particles, puckTrail;
+        const GOAL_W = 80;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 420);
+            W = maxW; H = Math.floor(W * 0.7);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score1 = 0; score2 = 0; gameOver = false;
+            document.getElementById('score1').textContent = '0';
+            document.getElementById('score2').textContent = '0';
+            document.getElementById('endOverlay').style.display = 'none';
+            p1 = { x: W * 0.3, y: H / 2, r: 18, color: '#44aaff' };
+            p2 = { x: W * 0.7, y: H / 2, r: 18, color: '#ff4444' };
+            resetPuck();
+            particles = []; puckTrail = [];
+            loop();
+        }
+
+        function resetPuck() {
+            puck = { x: W / 2, y: H / 2, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, r: 8 };
+            puckTrail = [];
+        }
+
+        function movePlayer(p, dx, dy) {
+            const nx = p.x + dx, ny = p.y + dy;
+            if (nx - p.r < 0 || nx + p.r > W || ny - p.r < 0 || ny + p.r > H) return;
+            // Can't enter opponent's goal
+            const inGoal1 = ny > H / 2 - GOAL_W / 2 && ny < H / 2 + GOAL_W / 2 && nx - p.r < 20;
+            const inGoal2 = ny > H / 2 - GOAL_W / 2 && ny < H / 2 + GOAL_W / 2 && nx + p.r > W - 20;
+            if (inGoal1 || inGoal2) return;
+            p.x = nx; p.y = ny;
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Puck friction
+            puck.vx *= 0.995; puck.vy *= 0.995;
+            puck.x += puck.vx; puck.y += puck.vy;
+
+            // Wall bounce
+            if (puck.y - puck.r < 0) { puck.y = puck.r; puck.vy *= -0.8; }
+            if (puck.y + puck.r > H) { puck.y = H - puck.r; puck.vy *= -0.8; }
+            if (puck.x - puck.r < 0) { puck.x = puck.r; puck.vx *= -0.8; }
+            if (puck.x + puck.r > W) { puck.x = W - puck.r; puck.vx *= -0.8; }
+
+            // Goal check
+            if (puck.y > H / 2 - GOAL_W / 2 && puck.y < H / 2 + GOAL_W / 2) {
+                if (puck.x - puck.r < 10) {
+                    // P2 scores!
+                    score2++; document.getElementById('score2').textContent = score2;
+                    for (let i = 0; i < 15; i++) particles.push({ x: puck.x, y: puck.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5, life: 20, color: '#ff4444' });
+                    resetPuck();
+                    if (score2 >= 7) { endGame(); return; }
+                }
+                if (puck.x + puck.r > W - 10) {
+                    // P1 scores!
+                    score1++; document.getElementById('score1').textContent = score1;
+                    for (let i = 0; i < 15; i++) particles.push({ x: puck.x, y: puck.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5, life: 20, color: '#44aaff' });
+                    resetPuck();
+                    if (score1 >= 7) { endGame(); return; }
+                }
+            }
+
+            // Player-puck collision
+            for (const p of [p1, p2]) {
+                const dx = puck.x - p.x, dy = puck.y - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < p.r + puck.r) {
+                    const nx = dx / dist, ny = dy / dist;
+                    const overlap = p.r + puck.r - dist;
+                    puck.x += nx * overlap; puck.y += ny * overlap;
+                    // Transfer velocity
+                    const relV = (puck.vx - 0) * nx + (puck.vy - 0) * ny;
+                    puck.vx += nx * (4 + Math.abs(relV)); puck.vy += ny * (4 + Math.abs(relV));
+                    // Cap speed
+                    const maxSpd = 12;
+                    const spd = Math.sqrt(puck.vx * puck.vx + puck.vy * puck.vy);
+                    if (spd > maxSpd) { puck.vx *= maxSpd / spd; puck.vy *= maxSpd / spd; }
+                }
+            }
+
+            // Puck trail
+            puckTrail.push({ x: puck.x, y: puck.y, life: 6 });
+            if (puckTrail.length > 15) puckTrail.shift();
+            for (const t of puckTrail) t.life--;
+
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Rink
+            ctx.fillStyle = '#e8f0f8'; ctx.fillRect(0, 0, W, H);
+            // Ice sheen
+            ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(0, 0, W, H);
+
+            // Center line
+            ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]);
+            ctx.beginPath(); ctx.moveTo(W / 2, 10); ctx.lineTo(W / 2, H - 10); ctx.stroke();
+            ctx.setLineDash([]);
+            // Center circle
+            ctx.strokeStyle = '#3366cc'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(W / 2, H / 2, 50, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(W / 2, H / 2, 5, 0, Math.PI * 2); ctx.fill();
+
+            // Goals
+            ctx.fillStyle = '#ff444433'; ctx.fillRect(0, H / 2 - GOAL_W / 2, 12, GOAL_W);
+            ctx.fillStyle = '#4444ff33'; ctx.fillRect(W - 12, H / 2 - GOAL_W / 2, 12, GOAL_W);
+            ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 3;
+            ctx.strokeRect(0, H / 2 - GOAL_W / 2, 12, GOAL_W);
+            ctx.strokeStyle = '#4444ff'; ctx.lineWidth = 3;
+            ctx.strokeRect(W - 12, H / 2 - GOAL_W / 2, 12, GOAL_W);
+
+            // Puck trail
+            for (const t of puckTrail) {
+                if (t.life <= 0) continue;
+                ctx.fillStyle = `rgba(0,0,0,${t.life / 15})`;
+                ctx.beginPath(); ctx.arc(t.x, t.y, puck.r * (t.life / 6), 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Puck
+            ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#444'; ctx.beginPath(); ctx.arc(puck.x - 1, puck.y - 1, puck.r * 0.4, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(puck.x, puck.y, puck.r, 0, Math.PI * 2); ctx.stroke();
+
+            // Players
+            drawMallet(p1); drawMallet(p2);
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(${p.color === '#44aaff' ? '68,170,255' : '255,68,68'},${p.life / 20})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Score display
+            ctx.fillStyle = '#44aaff'; ctx.font = 'bold 28px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(score1, W * 0.35, 30);
+            ctx.fillStyle = '#ff4444';
+            ctx.fillText(score2, W * 0.65, 30);
+            ctx.textAlign = 'start';
+        }
+
+        function drawMallet(p) {
+            ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(p.x - p.r * 0.25, p.y - p.r * 0.25, p.r * 0.35, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        function endGame() {
+            gameOver = true;
+            const winner = score1 >= 7 ? 'P1 🔵' : 'P2 🔴';
+            document.getElementById('endTitle').textContent = '🏆 ' + winner + ' 获胜！';
+            document.getElementById('endScore1').textContent = score1;
+            document.getElementById('endScore2').textContent = score2;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        // Keyboard control
+        const keys = {};
+        document.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; e.preventDefault(); });
+        document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; e.preventDefault(); });
+
+        function handleInput() {
+            if (gameOver) return;
+            const spd = 4;
+            if (keys['w']) movePlayer(p1, 0, -spd);
+            if (keys['s']) movePlayer(p1, 0, spd);
+            if (keys['a']) movePlayer(p1, -spd, 0);
+            if (keys['d']) movePlayer(p1, spd, 0);
+            if (keys['arrowup']) movePlayer(p2, 0, -spd);
+            if (keys['arrowdown']) movePlayer(p2, 0, spd);
+            if (keys['arrowleft']) movePlayer(p2, -spd, 0);
+            if (keys['arrowright']) movePlayer(p2, spd, 0);
+        }
+
+        function gameLoop() { handleInput(); update(); draw(); if (!gameOver) animId = requestAnimationFrame(gameLoop); }
+        loop = gameLoop;
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>043 - 极速飞车</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a472a; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🏎️ 极速飞车 — #043</h1>
+    <div class="top-bar">
+        <span>🏁 <span id="score">0</span>m</span>
+        <span>🪙 <span id="coins">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 ←→/AD 切换车道 | 躲避来车 | 收集金币 | 速度越来越快</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 撞车了！</h2>
+        <p>距离：<strong id="endScore">0</strong>m | 金币：<strong id="endCoins">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const LANES = 3;
+        let W, H, laneW, playerLane, playerY, score, coins, bestScore, gameOver, animId;
+        let cars, coinItems, roadOffset, speed, carTimer, coinTimer;
+        let particles;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.5);
+            canvas.width = W; canvas.height = H;
+            laneW = W / LANES;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; coins = 0; gameOver = false; speed = 3;
+            playerLane = 1; playerY = H * 0.78;
+            bestScore = parseInt(localStorage.getItem('racing-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('coins').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            cars = []; coinItems = []; particles = []; roadOffset = 0;
+            carTimer = 0; coinTimer = 0;
+            loop();
+        }
+
+        function spawnCar() {
+            const lane = Math.floor(Math.random() * LANES);
+            const carY = -100;
+            // Make sure no overlap
+            if (cars.some(c => c.lane === lane && Math.abs(c.y - carY) < 80)) return;
+            const colors = ['#ff4444','#ff8844','#44aaff','#44ff44','#ffd700','#ff44ff','#fff','#888'];
+            cars.push({ lane, y: carY, color: colors[Math.floor(Math.random() * colors.length)], w: laneW * 0.7, h: 70 });
+        }
+
+        function spawnCoin() {
+            const lane = Math.floor(Math.random() * LANES);
+            coinItems.push({ lane, y: -30, r: 8 });
+        }
+
+        function moveLane(dir) {
+            if (gameOver) return;
+            playerLane = Math.max(0, Math.min(LANES - 1, playerLane + dir));
+        }
+
+        function update() {
+            if (gameOver) return;
+            roadOffset += speed;
+            if (roadOffset > 40) roadOffset -= 40;
+            score += speed * 0.3;
+            document.getElementById('score').textContent = Math.floor(score);
+            if (Math.floor(score) > bestScore) { bestScore = Math.floor(score); localStorage.setItem('racing-best', bestScore); document.getElementById('best').textContent = bestScore; }
+
+            // Speed up
+            speed = 3 + score / 150;
+            if (speed > 15) speed = 15;
+
+            // Spawn
+            carTimer++;
+            if (carTimer >= Math.max(20, 70 - score / 10)) { spawnCar(); carTimer = 0; }
+            coinTimer++;
+            if (coinTimer >= 60) { spawnCoin(); coinTimer = 0; }
+
+            // Update cars
+            for (const c of cars) c.y += speed;
+            cars = cars.filter(c => c.y < H + 120);
+
+            // Update coins
+            for (const c of coinItems) c.y += speed;
+            coinItems = coinItems.filter(c => c.y < H + 50);
+
+            // Player collision with cars
+            const px = playerLane * laneW + laneW / 2;
+            const py = playerY;
+            for (const c of cars) {
+                const cx = c.lane * laneW + laneW / 2;
+                if (Math.abs(px - cx) < c.w * 0.7 && Math.abs(py - (c.y + c.h / 2)) < (40 + c.h) / 2) {
+                    // Crash!
+                    for (let i = 0; i < 15; i++) particles.push({ x: px, y: py, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6 - 3, life: 20 + Math.random() * 20, color: '#ff4444' });
+                    endGame();
+                    return;
+                }
+                // Near miss bonus
+                if (Math.abs(px - cx) < c.w * 0.9 && Math.abs(py - (c.y + c.h / 2)) < 55 && !c.nearMiss) {
+                    c.nearMiss = true;
+                    score += 5;
+                }
+            }
+
+            // Player collision with coins
+            for (let ci = coinItems.length - 1; ci >= 0; ci--) {
+                const c = coinItems[ci];
+                const cx = c.lane * laneW + laneW / 2;
+                if (Math.abs(px - cx) < laneW * 0.3 && Math.abs(py - c.y) < 30) {
+                    coins++;
+                    score += 10;
+                    document.getElementById('coins').textContent = coins;
+                    document.getElementById('score').textContent = Math.floor(score);
+                    coinItems.splice(ci, 1);
+                }
+            }
+
+            // Update particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Grass
+            ctx.fillStyle = '#1a472a'; ctx.fillRect(0, 0, W, H);
+            // Road
+            ctx.fillStyle = '#333'; ctx.fillRect(laneW * 0.05, 0, W * 0.9, H);
+            // Road markings
+            ctx.setLineDash([20, 15]);
+            ctx.strokeStyle = '#ff0'; ctx.lineWidth = 3;
+            for (let i = 0; i < LANES - 1; i++) {
+                ctx.beginPath(); ctx.moveTo((i + 1) * laneW - laneW * 0.05, roadOffset % 40);
+                ctx.lineTo((i + 1) * laneW - laneW * 0.05, roadOffset % 40 + H + 40);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // Road edges
+            ctx.fillStyle = '#fff'; ctx.fillRect(laneW * 0.02, 0, 4, H);
+            ctx.fillRect(W - laneW * 0.02 - 4, 0, 4, H);
+
+            // Coins
+            for (const c of coinItems) {
+                const cx = c.lane * laneW + laneW / 2;
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(cx, c.y, c.r, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx - 2, c.y - 2, c.r * 0.3, 0, Math.PI * 2); ctx.fill();
+                ctx.font = 'bold 10px "Segoe UI"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('💰', cx, c.y);
+            }
+
+            // Cars
+            for (const c of cars) {
+                const cx = c.lane * laneW + laneW / 2;
+                ctx.fillStyle = c.color; ctx.fillRect(cx - c.w / 2, c.y, c.w, c.h);
+                // Windows
+                ctx.fillStyle = '#222'; ctx.fillRect(cx - c.w * 0.3, c.y + 8, c.w * 0.6, 18);
+                // Lights
+                ctx.fillStyle = '#ff0'; ctx.fillRect(cx - c.w * 0.35, c.y + c.h - 5, c.w * 0.2, 5);
+                ctx.fillRect(cx + c.w * 0.15, c.y + c.h - 5, c.w * 0.2, 5);
+            }
+
+            // Player car
+            const px = playerLane * laneW + laneW / 2;
+            const py = playerY;
+            ctx.fillStyle = '#00d4ff'; ctx.fillRect(px - laneW * 0.32, py - 20, laneW * 0.64, 50);
+            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(px - laneW * 0.2, py - 12, laneW * 0.4, 20);
+            ctx.fillStyle = '#ff4444'; ctx.fillRect(px - laneW * 0.28, py + 25, laneW * 0.15, 8);
+            ctx.fillRect(px + laneW * 0.14, py + 25, laneW * 0.15, 8);
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(px - laneW * 0.32 - 3, py - 20 + 5, laneW * 0.64, 45);
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(255,68,68,${p.life / 40})`; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Speed indicator
+            ctx.fillStyle = '#ffd700'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('⚡ ' + Math.floor(speed * 20) + ' km/h', W - 10, 20);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = Math.floor(score);
+            document.getElementById('endCoins').textContent = coins;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (Math.floor(score) > bestScore) { bestScore = Math.floor(score); localStorage.setItem('racing-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); moveLane(-1); }
+            if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); moveLane(1); }
+        });
+
+        let touchStartX = 0;
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); touchStartX = e.touches[0].clientX; });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); });
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            if (gameOver) return;
+            const dx = (e.changedTouches[0]?.clientX || touchStartX) - touchStartX;
+            if (Math.abs(dx) > 20) moveLane(dx > 0 ? 1 : -1);
+        });
+        canvas.addEventListener('mousedown', e => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = (e.clientX - rect.left) * (W / rect.width);
+            const targetLane = Math.floor(cx / laneW);
+            moveLane(targetLane - playerLane);
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

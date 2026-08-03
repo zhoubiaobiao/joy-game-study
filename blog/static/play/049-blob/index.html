@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>049 - 球球大作战</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #0a0a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🟢 球球大作战 — #049</h1>
+    <div class="top-bar">
+        <span>🏆 <span id="score">0</span></span>
+        <span>📏 质量 <span id="mass">10</span></span>
+        <span>🥇 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 鼠标/触摸移动 | 吃食物变大 | 吞并比你小的球 | 被大的碰到则结束</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 被吞噬了！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 最大质量：<strong id="endMass">10</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const WORLD_W = 1200, WORLD_H = 900;
+        let W, H, player, foods, enemies, particles, score, bestScore, maxMass, gameOver, animId;
+        let cameraX, cameraY;
+
+        const ENEMY_COLORS = ['#ff4444','#ff8844','#ff44ff','#ffd700','#44ff44','#00d4ff','#ff6644','#aaff44'];
+        const FOOD_COLORS = ['#ff4444','#ffd700','#44ff44','#44aaff','#ff44ff','#ff8844','#44ffff'];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 0.85);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; gameOver = false; maxMass = 10;
+            bestScore = parseInt(localStorage.getItem('blob-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('mass').textContent = '10';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            player = { x: WORLD_W / 2, y: WORLD_H / 2, r: 12, color: '#00d4ff', speed: 3 };
+            cameraX = player.x - W / 2; cameraY = player.y - H / 2;
+            // Spawn food
+            foods = [];
+            for (let i = 0; i < 80; i++) {
+                foods.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, r: 3 + Math.random() * 3, color: FOOD_COLORS[Math.floor(Math.random() * FOOD_COLORS.length)] });
+            }
+            // Spawn enemies
+            enemies = [];
+            for (let i = 0; i < 15; i++) {
+                const r = 10 + Math.random() * 18;
+                enemies.push({
+                    x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, r,
+                    color: ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)],
+                    vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5,
+                    name: '👾'
+                });
+            }
+            particles = [];
+            loop();
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Move enemies randomly
+            for (const e of enemies) {
+                e.x += e.vx; e.y += e.vy;
+                if (e.x - e.r < 0 || e.x + e.r > WORLD_W) e.vx *= -1;
+                if (e.y - e.r < 0 || e.y + e.r > WORLD_H) e.vy *= -1;
+                // Random direction change
+                if (Math.random() < 0.02) {
+                    e.vx += (Math.random() - 0.5) * 1;
+                    e.vy += (Math.random() - 0.5) * 1;
+                    const spd = Math.sqrt(e.vx * e.vx + e.vy * e.vy);
+                    if (spd > 2) { e.vx *= 2 / spd; e.vy *= 2 / spd; }
+                }
+            }
+
+            // Player-enemy collision
+            for (let ei = enemies.length - 1; ei >= 0; ei--) {
+                const e = enemies[ei];
+                const dist = Math.hypot(player.x - e.x, player.y - e.y);
+                if (dist < player.r + e.r) {
+                    if (player.r > e.r * 1.05) {
+                        // Eat enemy
+                        score += Math.floor(e.r);
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('blob-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                        player.r += e.r * 0.15;
+                        for (let i = 0; i < 8; i++) particles.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 15, color: e.color });
+                        enemies.splice(ei, 1);
+                        // Respawn enemy
+                        const newR = 8 + Math.random() * 15;
+                        enemies.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, r: newR, color: ENEMY_COLORS[Math.floor(Math.random() * ENEMY_COLORS.length)], vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5, name: '👾' });
+                        // Respawn food
+                        foods.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, r: 3 + Math.random() * 3, color: FOOD_COLORS[Math.floor(Math.random() * FOOD_COLORS.length)] });
+                    } else if (e.r > player.r * 1.05) {
+                        // Player eaten
+                        for (let i = 0; i < 20; i++) particles.push({ x: player.x, y: player.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 20, color: player.color });
+                        endGame();
+                        return;
+                    }
+                }
+            }
+
+            // Player-food collision
+            for (let fi = foods.length - 1; fi >= 0; fi--) {
+                const f = foods[fi];
+                if (Math.hypot(player.x - f.x, player.y - f.y) < player.r + f.r) {
+                    score += 1;
+                    document.getElementById('score').textContent = score;
+                    if (score > bestScore) { bestScore = score; localStorage.setItem('blob-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                    player.r += 0.1;
+                    foods.splice(fi, 1);
+                    // Spawn new food
+                    foods.push({ x: Math.random() * WORLD_W, y: Math.random() * WORLD_H, r: 3 + Math.random() * 3, color: FOOD_COLORS[Math.floor(Math.random() * FOOD_COLORS.length)] });
+                }
+            }
+
+            // Update mass display
+            const mass = Math.floor(player.r * player.r / 10);
+            document.getElementById('mass').textContent = mass;
+            if (mass > maxMass) maxMass = mass;
+
+            // Speed decreases as size increases
+            player.speed = Math.max(1, 4 - player.r / 15);
+
+            // Camera follow
+            cameraX += (player.x - W / 2 - cameraX) * 0.1;
+            cameraY += (player.y - H / 2 - cameraY) * 0.1;
+
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.save();
+            ctx.translate(-cameraX, -cameraY);
+
+            // Grid background
+            ctx.fillStyle = '#0a0a2e'; ctx.fillRect(cameraX, cameraY, W, H);
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 0.5;
+            const gridSize = 40;
+            for (let x = Math.floor(cameraX / gridSize) * gridSize; x < cameraX + W + gridSize; x += gridSize) {
+                ctx.beginPath(); ctx.moveTo(x, cameraY); ctx.lineTo(x, cameraY + H); ctx.stroke();
+            }
+            for (let y = Math.floor(cameraY / gridSize) * gridSize; y < cameraY + H + gridSize; y += gridSize) {
+                ctx.beginPath(); ctx.moveTo(cameraX, y); ctx.lineTo(cameraX + W, y); ctx.stroke();
+            }
+
+            // World border
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
+
+            // Foods
+            for (const f of foods) {
+                if (f.x < cameraX - 30 || f.x > cameraX + W + 30 || f.y < cameraY - 30 || f.y > cameraY + H + 30) continue;
+                ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Enemies
+            for (const e of enemies) {
+                if (e.x < cameraX - 50 || e.x > cameraX + W + 50 || e.y < cameraY - 50 || e.y > cameraY + H + 50) continue;
+                // Glow if bigger
+                if (e.r > player.r * 1.05) {
+                    ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 4, 0, Math.PI * 2); ctx.stroke();
+                }
+                ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.arc(e.x - e.r * 0.2, e.y - e.r * 0.2, e.r * 0.35, 0, Math.PI * 2); ctx.fill();
+                // Name
+                ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(e.r)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(e.name, e.x, e.y);
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(${p.color === '#00d4ff' ? '0,212,255' : '255,68,68'},${p.life / 20})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Player
+            ctx.fillStyle = player.color; ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(player.x - player.r * 0.2, player.y - player.r * 0.2, player.r * 0.35, 0, Math.PI * 2); ctx.fill();
+            // Eyes
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x - player.r * 0.3, player.y - player.r * 0.15, player.r * 0.28, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(player.x + player.r * 0.3, player.y - player.r * 0.15, player.r * 0.28, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(player.x - player.r * 0.25, player.y - player.r * 0.12, player.r * 0.14, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(player.x + player.r * 0.35, player.y - player.r * 0.12, player.r * 0.14, 0, Math.PI * 2); ctx.fill();
+
+            ctx.restore();
+
+            // Minimap
+            const mmW = 60, mmH = 45, mmX = W - mmW - 6, mmY = 6;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(mmX, mmY, mmW, mmH);
+            ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.strokeRect(mmX, mmY, mmW, mmH);
+            // Player dot on minimap
+            const pdx = mmX + player.x / WORLD_W * mmW;
+            const pdy = mmY + player.y / WORLD_H * mmH;
+            ctx.fillStyle = '#00d4ff'; ctx.beginPath(); ctx.arc(pdx, pdy, 2, 0, Math.PI * 2); ctx.fill();
+            // Viewport on minimap
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+            const vx = mmX + cameraX / WORLD_W * mmW;
+            const vy = mmY + cameraY / WORLD_H * mmH;
+            const vw = W / WORLD_W * mmW;
+            const vh = H / WORLD_H * mmH;
+            ctx.strokeRect(vx, vy, vw, vh);
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endMass').textContent = maxMass;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (score > bestScore) { bestScore = score; localStorage.setItem('blob-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        // Mouse follow
+        canvas.addEventListener('mousemove', e => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (W / rect.width) + cameraX;
+            const my = (e.clientY - rect.top) * (H / rect.height) + cameraY;
+            const dx = mx - player.x; const dy = my - player.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 2) {
+                player.x += (dx / dist) * player.speed;
+                player.y += (dy / dist) * player.speed;
+            }
+            player.x = Math.max(player.r, Math.min(WORLD_W - player.r, player.x));
+            player.y = Math.max(player.r, Math.min(WORLD_H - player.r, player.y));
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.touches[0].clientX - rect.left) * (W / rect.width) + cameraX;
+            const my = (e.touches[0].clientY - rect.top) * (H / rect.height) + cameraY;
+            const dx = mx - player.x; const dy = my - player.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 2) {
+                player.x += (dx / dist) * player.speed;
+                player.y += (dy / dist) * player.speed;
+            }
+            player.x = Math.max(player.r, Math.min(WORLD_W - player.r, player.x));
+            player.y = Math.max(player.r, Math.min(WORLD_H - player.r, player.y));
+        });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
