@@ -106,3 +106,41 @@ joy-game-study/
 ### 下一步
 
 开发第三个游戏（编号 003）。
+
+---
+
+## 2026-08-03 — 阶段三自动化完成
+
+### 决定事项
+
+- 创建 `games/manifest.json` 作为游戏数据的**唯一来源**
+- 构建脚本 `scripts/build.js` 自动生成所有派生文件
+- CI/CD 流程中集成 build 脚本，无需手动同步
+
+### 新增文件
+
+| 文件 | 用途 |
+|------|------|
+| `games/manifest.json` | 所有游戏的元数据（id, name, short, how, desc） |
+| `scripts/build.js` | 读取 manifest，自动生成 nav.js / 博客文章 / 游戏列表 / 静态同步 |
+
+### 自动化覆盖
+
+| 之前（手动） | 之后（自动） |
+|-------------|-------------|
+| 手动编辑 `nav.js` 添加游戏 | `build.js` 从 manifest 生成 |
+| 手动写 `_index.md` 游戏列表 | `build.js` 从 manifest 生成 |
+| 手动写 `NNN-name.md` 博客文章 | `build.js` 从 manifest 生成 |
+| 手动复制 HTML 到 `static/play/` | `build.js` 自动同步 |
+| CI 只构建 Hugo | CI 先运行 build.js 再构建 Hugo |
+
+### 修改文件
+
+- `.github/workflows/hugo.yml` — 添加 Node.js setup + build script 步骤
+- `.claude/skills/new-game/skill.md` — 适配 manifest.json 工作流
+- `.claude/skills/deploy/skill.md` — 添加 build script 步骤
+- `.claude/memory/progress.md` — 阶段三标记完成
+
+### 下一步
+
+阶段三完成，可以继续开发游戏 021+。

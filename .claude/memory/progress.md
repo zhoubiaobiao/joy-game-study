@@ -36,4 +36,30 @@ type: project
 | 019  | 🔨 打地鼠 | ✅ |
 | 020  | 💎 消消乐 | ✅ |
 
-## 阶段三：自动化（待开始）
+## 阶段三：自动化 ✅ 完成
+
+- **游戏清单**：`games/manifest.json` — 所有游戏元数据的唯一来源
+- **构建脚本**：`scripts/build.js` — 自动生成 nav.js、博客文章、游戏列表、同步静态文件
+- **CI/CD 增强**：GitHub Actions 在 Hugo 构建前自动运行 `node scripts/build.js`
+- **Skill 更新**：`new-game` 和 `deploy` skill 适配新工作流
+
+### 自动化流程
+
+```
+games/manifest.json (手动编辑)
+        │
+        ▼
+  scripts/build.js (CI 自动运行 / 本地手动运行)
+        │
+        ├── blog/static/nav.js           ← 自动生成
+        ├── blog/content/games/_index.md ← 自动生成
+        ├── blog/content/games/*.md      ← 自动生成
+        └── blog/static/play/*/          ← 自动同步
+```
+
+### 新增游戏步骤（简化后）
+
+1. 创建 `games/NNN-name/index.html`
+2. 在 `games/manifest.json` 添加游戏条目
+3. 运行 `node scripts/build.js`
+4. 提交推送 → CI 自动部署
