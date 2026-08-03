@@ -13,5 +13,6 @@ menu: main
 | 003 | 🔢 2048 | [开始游戏](/joy-game-study/play/003-2048/) |
 | 004 | 🧱 俄罗斯方块 | [开始游戏](/joy-game-study/play/004-tetris/) |
 | 005 | 🧱 打砖块 | [开始游戏](/joy-game-study/play/005-breakout/) |
+| 006 | 🦾 弹球 | [开始游戏](/joy-game-study/play/006-pinball/) |
 
-> 进度：5 / 100
+> 进度：6 / 100
