@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>011 - Pong 对战</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .status { display: flex; gap: 24px; margin-bottom: 4px; font-size: clamp(1em, 3vw, 1.3em); }
+        .status .s { text-align: center; }
+        .status .s .n { font-weight: bold; font-size: 1.5em; color: #ffd700; }
+        .status .s .l { font-size: 0.6em; color: #888; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 500px; aspect-ratio: 16/10; }
+        canvas { width: 100%; height: 100%; border: 2px solid #333; background: #0a0a1a; border-radius: 6px; display: block; touch-action: manipulation; }
+
+        .mode-row { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; justify-content: center; }
+        .mode-btn {
+            padding: 5px 12px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.7em, 2.5vw, 0.85em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mode-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 10px 24px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.8em, 2.5vw, 0.95em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏓 Pong 对战 — #011</h1>
+    <div class="mode-row">
+        <button class="mode-btn active" data-mode="ai">🤖 单人 vs AI</button>
+        <button class="mode-btn" data-mode="2p">👥 双人对战</button>
+    </div>
+    <div class="status">
+        <div class="s"><div class="n" id="p1Score">0</div><div class="l" id="p1Label">玩家</div></div>
+        <div class="s"><div class="n" id="p2Score">0</div><div class="l" id="p2Label">AI</div></div>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="startBtn">🔄 开始</button>
+    </div>
+    <div class="info">💡 1P: W/S 控制左挡板 | 2P: ↑/↓ 控制右挡板 | 先得7分获胜</div>
+
+    <div class="overlay win" id="winOverlay">
+        <h2>🏆 <span id="winner"></span></h2>
+        <p><span id="winScore"></span></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, p1Y, p2Y, ballX, ballY, ballDX, ballDY, p1Score, p2Score, ballSpeed;
+        let gameMode = 'ai', animId, gameRunning = false;
+        const PW = 12, PH = 80, BR = 8, WIN_SCORE = 7;
+
+        function resize() {
+            const s = Math.min(canvas.parentElement.clientWidth, 500);
+            canvas.width = s; canvas.height = s * 0.625;
+            W = canvas.width; H = canvas.height;
+        }
+
+        function init() {
+            resize();
+            p1Y = H/2; p2Y = H/2;
+            resetBall();
+            gameRunning = false;
+        }
+
+        function resetBall() {
+            ballX = W/2; ballY = H/2;
+            const angle = (Math.random()*0.8-0.4) * Math.PI; // -72° ~ +72°
+            ballSpeed = 5;
+            ballDX = Math.cos(angle) * ballSpeed * (Math.random()>0.5?1:-1);
+            ballDY = Math.sin(angle) * ballSpeed;
+            if (Math.abs(ballDX) < 2) ballDX = (ballDX>0?1:-1) * 2;
+        }
+
+        function newGame() {
+            p1Score = 0; p2Score = 0;
+            document.getElementById('p1Score').textContent = '0';
+            document.getElementById('p2Score').textContent = '0';
+            document.getElementById('winOverlay').style.display = 'none';
+            init(); draw();
+        }
+
+        function scorePoint(player) {
+            if (player===1) p1Score++; else p2Score++;
+            document.getElementById('p1Score').textContent = p1Score;
+            document.getElementById('p2Score').textContent = p2Score;
+            if (p1Score>=WIN_SCORE || p2Score>=WIN_SCORE) {
+                gameRunning = false;
+                document.getElementById('winner').textContent = p1Score>=WIN_SCORE ? '玩家获胜！' : (gameMode==='ai'?'AI 获胜！':'玩家2 获胜！');
+                document.getElementById('winScore').textContent = p1Score+' - '+p2Score;
+                document.getElementById('winOverlay').style.display = 'block';
+            }
+            resetBall();
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            ballX += ballDX; ballY += ballDY;
+
+            // 上下墙
+            if (ballY-BR <= 0) { ballY = BR; ballDY = Math.abs(ballDY); }
+            if (ballY+BR >= H) { ballY = H-BR; ballDY = -Math.abs(ballDY); }
+
+            // 左挡板
+            if (ballX-BR <= PW && ballY >= p1Y-PH/2 && ballY <= p1Y+PH/2) {
+                ballX = PW+BR;
+                const hit = (ballY-p1Y)/(PH/2); // [-1, 1]
+                const angle = hit * Math.PI/3; // max 60°
+                ballSpeed += 0.3;
+                ballDX = Math.cos(angle)*ballSpeed;
+                ballDY = Math.sin(angle)*ballSpeed;
+            }
+
+            // 右挡板
+            if (ballX+BR >= W-PW && ballY >= p2Y-PH/2 && ballY <= p2Y+PH/2) {
+                ballX = W-PW-BR;
+                const hit = (ballY-p2Y)/(PH/2);
+                const angle = hit * Math.PI/3;
+                ballSpeed += 0.3;
+                ballDX = -Math.cos(angle)*ballSpeed;
+                ballDY = Math.sin(angle)*ballSpeed;
+            }
+
+            // 得分
+            if (ballX-BR <= 0) scorePoint(2);
+            if (ballX+BR >= W) scorePoint(1);
+
+            // AI
+            if (gameMode==='ai' && gameRunning && ballDX>0) {
+                const target = p2Y + (ballY-p2Y)*0.08 + (Math.random()-0.5)*15;
+                p2Y += (target-p2Y)*0.12;
+                p2Y = Math.max(PH/2, Math.min(H-PH/2, p2Y));
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,W,H);
+            ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0,0,W,H);
+
+            // 中线
+            ctx.setLineDash([8,8]);
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 中间圆
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.beginPath(); ctx.arc(W/2, H/2, 40, 0, Math.PI*2); ctx.stroke();
+
+            // 挡板
+            const grad1 = ctx.createLinearGradient(0,p1Y-PH/2,0,p1Y+PH/2);
+            grad1.addColorStop(0,'#00d4ff'); grad1.addColorStop(1,'#0088bb');
+            ctx.fillStyle = grad1;
+            ctx.beginPath(); ctx.roundRect(0, p1Y-PH/2, PW, PH, 6); ctx.fill();
+
+            const grad2 = ctx.createLinearGradient(W-PW,p2Y-PH/2,W-PW,p2Y+PH/2);
+            gamemode==='2p' ? grad2.addColorStop(0,'#ff6644') : grad2.addColorStop(0,'#ff8844');
+            gamemode==='2p' ? grad2.addColorStop(1,'#cc3311') : grad2.addColorStop(1,'#cc5500');
+            ctx.fillStyle = grad2;
+            ctx.beginPath(); ctx.roundRect(W-PW, p2Y-PH/2, PW, PH, 6); ctx.fill();
+
+            // 球
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(ballX, ballY, BR, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath(); ctx.arc(ballX, ballY, BR+3, 0, Math.PI*2); ctx.fill();
+
+            // 得分
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.font = 'bold 40px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(p1Score+'  '+p2Score, W/2, 45);
+            ctx.textAlign = 'start';
+
+            if (!gameRunning && p1Score===0 && p2Score===0) {
+                ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0,0,W,H);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 18px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('点击屏幕 或 按空格开始', W/2, H/2);
+                ctx.textAlign = 'start';
+            }
+        }
+
+        function loop() { update(); draw(); animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', ()=>{ if(!gameRunning){gameRunning=true;draw();}});
+        document.addEventListener('keydown',e=>{if(e.key===' '){e.preventDefault();if(!gameRunning)gameRunning=true;}});
+
+        const keys={};
+        document.addEventListener('keydown',e=>keys[e.key]=true);
+        document.addEventListener('keyup',e=>keys[e.key]=false);
+
+        function handleInput() {
+            if (keys['w']||keys['W']) p1Y-=8;
+            if (keys['s']||keys['S']) p1Y+=8;
+            p1Y = Math.max(PH/2, Math.min(H-PH/2, p1Y));
+            if (gameMode==='2p') {
+                if (keys['ArrowUp']) p2Y-=8;
+                if (keys['ArrowDown']) p2Y+=8;
+                p2Y = Math.max(PH/2, Math.min(H-PH/2, p2Y));
+            }
+            requestAnimationFrame(handleInput);
+        }
+        handleInput();
+
+        // 触屏
+        canvas.addEventListener('touchmove',e=>{
+            e.preventDefault();
+            for (const t of e.touches) {
+                const rect = canvas.getBoundingClientRect();
+                const y = ((t.clientY-rect.top)/rect.height)*H;
+                if (t.clientX-rect.left < rect.width/2) p1Y = Math.max(PH/2,Math.min(H-PH/2,y));
+                else if (gameMode==='2p') p2Y = Math.max(PH/2,Math.min(H-PH/2,y));
+            }
+        },{passive:false});
+
+        document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=>{
+            document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+            gameMode = b.dataset.mode;
+            document.getElementById('p1Label').textContent = '玩家';
+            document.getElementById('p2Label').textContent = gameMode==='ai'?'AI':'玩家2';
+            newGame();
+        }));
+
+        window.addEventListener('resize',()=>{resize();draw();});
+        init(); loop();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

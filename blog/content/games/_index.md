@@ -18,5 +18,10 @@ menu: main
 | 008 | ⭕ 井字棋 AI | [开始游戏](/joy-game-study/play/008-tictactoe/) |
 | 009 | 💣 扫雷 | [开始游戏](/joy-game-study/play/009-minesweeper/) |
 | 010 | 🃏 记忆翻牌 | [开始游戏](/joy-game-study/play/010-memory/) |
+| 011 | 🏓 Pong 对战 | [开始游戏](/joy-game-study/play/011-pong/) |
+| 012 | 🚀 太空侵略者 | [开始游戏](/joy-game-study/play/012-invaders/) |
+| 013 | 📦 推箱子 | [开始游戏](/joy-game-study/play/013-sokoban/) |
+| 014 | 🔪 水果忍者 | [开始游戏](/joy-game-study/play/014-fruit/) |
+| 015 | 🏰 塔防 | [开始游戏](/joy-game-study/play/015-td/) |
 
-> 进度：10 / 100 🎉 阶段二完成！
+> 进度：15 / 100 🎉

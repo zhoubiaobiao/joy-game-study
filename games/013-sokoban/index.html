@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>013 - 推箱子</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .status-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; align-items:center; }
+        .status-bar span { color: #ffd700; font-weight: bold; }
+
+        .level-sel { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; justify-content: center; }
+        .lv-btn {
+            width: 34px; height: 34px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 6px; cursor: pointer; font-size: 0.8em;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .lv-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
+        .lv-btn.done { border-color: #44dd66; color: #44dd66; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 420px; }
+        canvas { width: 100%; display: block; border: 3px solid #333; border-radius: 6px; touch-action: manipulation; image-rendering: pixelated; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 16px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📦 推箱子 — #013</h1>
+
+    <div class="status-bar">
+        <span>关卡：<span id="levelNum">1</span>/<span id="totalLevels">10</span></span>
+        <span>步数：<span id="moves">0</span></span>
+    </div>
+
+    <div class="level-sel" id="levelSel"></div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+
+    <div class="btn-row">
+        <button class="btn" id="undoBtn">↩ 撤销</button>
+        <button class="btn primary" id="resetBtn">🔄 重置关卡</button>
+    </div>
+    <div class="info">💡 方向键/WASD 移动 | 把箱子推到目标点 | 不能拉只能推 | 手机滑动操作</div>
+
+    <div class="overlay win" id="winOverlay">
+        <h2>🎉 关卡完成！</h2>
+        <p>用了 <strong id="winMoves">0</strong> 步</p>
+        <button id="nextBtn">▶ 下一关</button>
+        <button onclick="resetLevel()">🔄 再试一次</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let CELL, playerR, playerC, board, targets, boxes, moveCount, history, currentLevel;
+        const WALL=1, FLOOR=0;
+
+        // 10个预定义关卡 (玩家=2, 箱子=3, 目标=4, 箱子在目标上=5)
+        const LEVELS = [
+            { map:['  ####','###  ####','#     ##','# #  #  #','#  $ .  #','##  #.###',' #  ## ##','  ####'], name:'入门' },
+            { map:['#####','#   #','# $ #','# . #','#   #','#####'], name:'简单' },
+            { map:[' ####','##  ##','# .$ #','#  # ##','##  . #',' # $  #',' #  ###',' ####'], name:'拐角' },
+            { map:['######','#    #','# #$ #','# .. #','#  # #','#   $#','######'], name:'双箱' },
+            { map:[' ####','##  ##','#  $.#','# #  #','# $. #','## .##',' ####'], name:'交叉' },
+            { map:['######','# .  #','# ## #','# $  #','#  $.#','#  ###','######'], name:'上下' },
+            { map:[' #####','###  ##','#  $$.#','#  .. #','## .  #',' ###  #','   ####'], name:'密集' },
+            { map:['######','# .  #','# #$ #','# $ .#','# #$ #','#  . #','######'], name:'三箱' },
+            { map:['#####','#.  #','# $ #','#  .#','# $ #','#  .#','#####'], name:'直列' },
+            { map:[' #####','###  ##','#  .$ #','#  #  #','# $.  #','# .$ .#','##   ##',' #####'], name:'挑战' },
+        ];
+
+        function parseLevel(idx) {
+            const raw = LEVELS[idx].map;
+            const rows = raw.length, cols = Math.max(...raw.map(r=>r.length));
+            board = Array.from({length:rows},()=>Array(cols).fill(FLOOR));
+            targets = []; boxes = []; // boxes: [{r,c}], targets: [{r,c}]
+            for (let r=0; r<rows; r++) for (let c=0; c<raw[r].length; c++) {
+                const ch = raw[r][c];
+                if (ch==='#') board[r][c]=WALL;
+                else if (ch==='.' || ch==='*') { board[r][c]=FLOOR; targets.push({r,c}); if (ch==='*') boxes.push({r,c}); }
+                else if (ch==='$') { board[r][c]=FLOOR; boxes.push({r,c}); }
+                else if (ch==='@' || ch==='+') { playerR=r; playerC=c; if (ch==='+') targets.push({r,c}); }
+                else board[r][c]=FLOOR;
+            }
+            // 找玩家位置（地图中用2标记或在空位上）
+            let found = false;
+            for (let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+                if (raw[r][c]==='2'||raw[r][c]==='@'||raw[r][c]==='+') { playerR=r; playerC=c; found=true; }
+            }
+            // 如果没找到玩家标记，放在第一个空位
+            if (!found) {
+                for (let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
+                    if (board[r][c]===FLOOR && !targets.some(t=>t.r===r&&t.c===c) && !boxes.some(b=>b.r===r&&b.c===c)) {
+                        playerR=r; playerC=c; found=true; break;
+                    }
+                    if (found) break;
+                }
+            }
+            moveCount=0; history=[];
+            document.getElementById('moves').textContent='0';
+            document.getElementById('winOverlay').style.display='none';
+            resizeCanvas();
+        }
+
+        function resizeCanvas() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 420);
+            const cols = board[0].length, rows = board.length;
+            CELL = Math.floor(maxW / cols);
+            canvas.width = CELL * cols; canvas.height = CELL * rows;
+        }
+
+        function isTarget(r,c) { return targets.some(t=>t.r===r&&t.c===c); }
+        function boxAt(r,c) { return boxes.findIndex(b=>b.r===r&&b.c===c); }
+
+        function saveState() { history.push({pr:playerR, pc:playerC, boxes:boxes.map(b=>({r:b.r,c:b.c})), moves:moveCount}); if(history.length>100)history.shift(); }
+
+        function undo() {
+            if (history.length===0) return;
+            const s = history.pop();
+            playerR=s.pr; playerC=s.pc; boxes=s.boxes; moveCount=s.moves;
+            document.getElementById('moves').textContent = moveCount;
+            document.getElementById('winOverlay').style.display='none';
+            draw();
+        }
+
+        function move(dr, dc) {
+            const nr=playerR+dr, nc=playerC+dc;
+            if (nr<0||nr>=board.length||nc<0||nc>=board[0].length) return;
+            if (board[nr][nc]===WALL) return;
+
+            const bi = boxAt(nr,nc);
+            if (bi>=0) {
+                const br=nr+dr, bc=nc+dc;
+                if (br<0||br>=board.length||bc<0||bc>=board[0].length) return;
+                if (board[br][bc]===WALL || boxAt(br,bc)>=0) return;
+                saveState();
+                boxes[bi] = {r:br, c:bc};
+            } else {
+                saveState();
+            }
+
+            playerR=nr; playerC=nc; moveCount++;
+            document.getElementById('moves').textContent=moveCount;
+
+            if (boxes.every(b=>isTarget(b.r,b.c))) {
+                document.getElementById('winMoves').textContent=moveCount;
+                document.getElementById('winOverlay').style.display='block';
+                document.getElementById('nextBtn').style.display=currentLevel<LEVELS.length-1?'inline-block':'none';
+                markLevelDone(currentLevel);
+            }
+            draw();
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            const rows=board.length, cols=board[0].length;
+
+            // 地板
+            ctx.fillStyle='#1a2840'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+            for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
+                const x=c*CELL, y=r*CELL;
+                if (board[r][c]===WALL) {
+                    ctx.fillStyle='#3a4a6c';
+                    ctx.fillRect(x+1, y+1, CELL-2, CELL-2);
+                    ctx.fillStyle='rgba(255,255,255,0.08)';
+                    ctx.fillRect(x+1, y+1, CELL-2, 2);
+                }
+                // 目标点
+                if (isTarget(r,c)) {
+                    ctx.fillStyle='#ffd70033';
+                    ctx.fillRect(x+CELL*0.15, y+CELL*0.15, CELL*0.7, CELL*0.7);
+                    ctx.strokeStyle='#ffd700';
+                    ctx.lineWidth=2;
+                    ctx.strokeRect(x+CELL*0.15, y+CELL*0.15, CELL*0.7, CELL*0.7);
+                    ctx.lineWidth=1;
+                }
+                // 箱子
+                const bi = boxAt(r,c);
+                if (bi>=0) {
+                    const onTarget = isTarget(r,c);
+                    ctx.fillStyle = onTarget ? '#44dd66' : '#ff8844';
+                    ctx.fillRect(x+3, y+3, CELL-6, CELL-6);
+                    ctx.fillStyle='rgba(255,255,255,0.3)';
+                    ctx.fillRect(x+3, y+3, CELL-6, 3);
+                    ctx.fillRect(x+3, y+3, 3, CELL-6);
+                    ctx.strokeStyle = onTarget ? '#22aa44' : '#cc6600';
+                    ctx.lineWidth=2;
+                    ctx.strokeRect(x+3, y+3, CELL-6, CELL-6);
+                    ctx.lineWidth=1;
+                }
+            }
+
+            // 玩家
+            const px=playerC*CELL, py=playerR*CELL;
+            ctx.fillStyle='#00d4ff';
+            ctx.beginPath(); ctx.arc(px+CELL/2, py+CELL/2, CELL*0.35, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle='#fff';
+            ctx.beginPath(); ctx.arc(px+CELL/2-2, py+CELL/2-2, CELL*0.1, 0, Math.PI*2); ctx.fill();
+        }
+
+        function resetLevel() { parseLevel(currentLevel); draw(); updateLevelBtns(); }
+        function loadLevel(idx) { currentLevel=idx; parseLevel(idx); draw(); updateLevelBtns(); }
+
+        function markLevelDone(idx) {
+            try {
+                const done = JSON.parse(localStorage.getItem('sokoban-done')||'[]');
+                if (!done.includes(idx)) { done.push(idx); localStorage.setItem('sokoban-done',JSON.stringify(done)); }
+            } catch(e){}
+            updateLevelBtns();
+        }
+        function updateLevelBtns() {
+            const done = JSON.parse(localStorage.getItem('sokoban-done')||'[]');
+            const sel = document.getElementById('levelSel');
+            sel.innerHTML = LEVELS.map((l,i)=>`<button class="lv-btn${i===currentLevel?' active':''}${done.includes(i)?' done':''}" data-idx="${i}">${i+1}</button>`).join('');
+            document.querySelectorAll('.lv-btn').forEach(b=>b.addEventListener('click',()=>loadLevel(parseInt(b.dataset.idx))));
+            document.getElementById('levelNum').textContent=currentLevel+1;
+            document.getElementById('totalLevels').textContent=LEVELS.length;
+        }
+
+        document.addEventListener('keydown',e=>{
+            if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') { e.preventDefault(); move(-1,0); }
+            if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') { e.preventDefault(); move(1,0); }
+            if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') { e.preventDefault(); move(0,-1); }
+            if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') { e.preventDefault(); move(0,1); }
+            if ((e.ctrlKey||e.metaKey)&&e.key==='z') { e.preventDefault(); undo(); }
+        });
+
+        // 触屏滑动
+        let tsX=0,tsY=0;
+        canvas.addEventListener('touchstart',e=>{tsX=e.touches[0].clientX;tsY=e.touches[0].clientY;});
+        canvas.addEventListener('touchend',e=>{
+            const dx=e.changedTouches[0].clientX-tsX, dy=e.changedTouches[0].clientY-tsY;
+            if(Math.abs(dx)<15&&Math.abs(dy)<15) return;
+            if(Math.abs(dx)>Math.abs(dy)) move(0,dx>0?1:-1); else move(dy>0?1:-1,0);
+        });
+
+        document.getElementById('undoBtn').addEventListener('click',undo);
+        document.getElementById('resetBtn').addEventListener('click',resetLevel);
+        document.getElementById('nextBtn').addEventListener('click',()=>{if(currentLevel<LEVELS.length-1)loadLevel(currentLevel+1);});
+
+        window.addEventListener('resize',()=>{resizeCanvas();draw();});
+        currentLevel=0; parseLevel(0); updateLevelBtns(); draw();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

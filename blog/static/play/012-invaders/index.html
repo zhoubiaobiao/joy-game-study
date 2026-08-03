@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>012 - 太空侵略者</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 8px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .status-bar { display: flex; gap: 18px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; }
+        .status-bar span { color: #ffd700; font-weight: bold; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4; }
+        canvas { width: 100%; height: 100%; border: 2px solid #333; background: #050510; border-radius: 6px; display: block; touch-action: manipulation; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay.lose h2 { color: #ff5555; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 太空侵略者 — #012</h1>
+
+    <div class="status-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>生命：<span id="lives">3</span></span>
+        <span>波次：<span id="wave">1</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="startBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 方向键/A,D 移动 | 空格射击 | 敌人的阵列会逐渐加速下降</div>
+
+    <div class="overlay lose" id="loseOverlay">
+        <h2>💥 被击毁了！</h2>
+        <p>得分：<strong id="loseScore">0</strong> | 到达波次：<strong id="loseWave">1</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+
+        // 游戏对象
+        let player, enemies, bullets, enemyBullets, particles;
+        let score, lives, wave, bestScore;
+        let animId, gameRunning, gameOver;
+        let moveDir = 1, moveTimer = 0, shootCooldown = 0, enemyShootTimer = 0;
+        let leftDown = false, rightDown = false, spaceDown = false;
+
+        const PLAYER_W = 36, PLAYER_H = 28, BULLET_H = 14, ENEMY_W = 30, ENEMY_H = 24;
+
+        function resize() {
+            const s = Math.min(canvas.parentElement.clientWidth, 480);
+            canvas.width = s; canvas.height = s * 1.333;
+            W = canvas.width; H = canvas.height;
+        }
+
+        function createEnemies() {
+            enemies = [];
+            const cols = 8, rows = 4 + Math.min(wave-1, 3);
+            const gapX = ENEMY_W + 8, gapY = ENEMY_H + 8;
+            const startX = (W - cols*gapX + 8)/2;
+            for (let r=0; r<rows; r++) for (let c=0; c<cols; c++) {
+                enemies.push({
+                    x: startX + c*gapX, y: 40 + r*gapY,
+                    w: ENEMY_W, h: ENEMY_H, alive: true,
+                    type: r < 2 ? 'top' : r < 4 ? 'mid' : 'bottom',
+                });
+            }
+            moveDir = 1; moveTimer = 0;
+        }
+
+        function newGame() {
+            resize();
+            player = { x: W/2-PLAYER_W/2, y: H-50, w: PLAYER_W, h: PLAYER_H };
+            bullets = []; enemyBullets = []; particles = [];
+            score = 0; lives = 3; wave = 1; gameRunning = false; gameOver = false;
+            bestScore = parseInt(localStorage.getItem('invaders-best')||'0');
+            leftDown=rightDown=spaceDown=false;
+            document.getElementById('score').textContent='0';
+            document.getElementById('lives').textContent='3';
+            document.getElementById('wave').textContent='1';
+            document.getElementById('best').textContent=bestScore;
+            document.getElementById('loseOverlay').style.display='none';
+            createEnemies();
+            draw();
+        }
+
+        function shoot() {
+            if (!gameRunning||gameOver) return;
+            bullets.push({ x: player.x+player.w/2-2, y: player.y, vy: -8 });
+        }
+
+        function update() {
+            if (!gameRunning||gameOver) return;
+
+            // 玩家移动
+            if (leftDown) player.x -= 6;
+            if (rightDown) player.x += 6;
+            player.x = Math.max(0,Math.min(W-player.w, player.x));
+
+            // 射击冷却
+            if (spaceDown && shootCooldown<=0) { shoot(); shootCooldown = 15; }
+            if (shootCooldown>0) shootCooldown--;
+
+            // 子弹
+            for (let i=bullets.length-1;i>=0;i--) {
+                bullets[i].y += bullets[i].vy;
+                if (bullets[i].y+BULLET_H<0) { bullets.splice(i,1); continue; }
+                let hit = false;
+                for (const e of enemies) {
+                    if (!e.alive) continue;
+                    if (bullets[i] && bullets[i].x+4>=e.x && bullets[i].x<=e.x+e.w && bullets[i].y>=e.y && bullets[i].y<=e.y+e.h) {
+                        e.alive = false; hit = true;
+                        score += e.type==='top'?30 : e.type==='mid'?20 : 10;
+                        document.getElementById('score').textContent=score;
+                        spawnExplosion(e.x+e.w/2, e.y+e.h/2, e.type==='top'?'#ff4466':e.type==='mid'?'#ff8844':'#44dd66');
+                        break;
+                    }
+                }
+                if (hit) bullets.splice(i,1);
+            }
+
+            // 敌人子弹
+            enemyShootTimer--;
+            if (enemyShootTimer<=0) {
+                const alive = enemies.filter(e=>e.alive);
+                if (alive.length>0) {
+                    const shooter = alive[Math.floor(Math.random()*alive.length)];
+                    enemyBullets.push({ x: shooter.x+shooter.w/2, y: shooter.y+shooter.h, vy: 3+wave*0.5 });
+                }
+                enemyShootTimer = Math.max(20, 60-wave*3);
+            }
+
+            for (let i=enemyBullets.length-1;i>=0;i--) {
+                enemyBullets[i].y += enemyBullets[i].vy;
+                if (enemyBullets[i].y > H) { enemyBullets.splice(i,1); continue; }
+                // 击中玩家
+                if (enemyBullets[i].x>=player.x && enemyBullets[i].x<=player.x+player.w && enemyBullets[i].y>=player.y && enemyBullets[i].y<=player.y+player.h) {
+                    enemyBullets.splice(i,1);
+                    lives--;
+                    document.getElementById('lives').textContent = lives;
+                    spawnExplosion(player.x+player.w/2, player.y+player.h/2, '#00d4ff');
+                    if (lives<=0) { endGame(); return; }
+                }
+            }
+
+            // 敌人移动
+            moveTimer++;
+            const speed = Math.max(5, 40 - wave*3 - enemies.filter(e=>e.alive).length*0.2);
+            if (moveTimer >= speed) {
+                moveTimer = 0;
+                let edgeHit = false;
+                for (const e of enemies) {
+                    if (!e.alive) continue;
+                    e.x += moveDir * 14;
+                    if (e.x <= 5 || e.x+e.w >= W-5) edgeHit = true;
+                }
+                if (edgeHit) {
+                    moveDir *= -1;
+                    for (const e of enemies) if (e.alive) { e.x += moveDir*14; e.y += 16; }
+                }
+                // 敌人碰到玩家
+                for (const e of enemies) {
+                    if (!e.alive) continue;
+                    if (e.y+e.h >= player.y && e.x+e.w>player.x && e.x<player.x+player.w) { endGame(); return; }
+                }
+            }
+
+            // 全部消灭 → 下一波
+            if (enemies.every(e=>!e.alive)) {
+                wave++;
+                document.getElementById('wave').textContent = wave;
+                createEnemies();
+                enemyBullets = [];
+            }
+
+            // 粒子
+            for (let i=particles.length-1;i>=0;i--) { particles[i].life--; if (particles[i].life<=0) particles.splice(i,1); }
+        }
+
+        function spawnExplosion(x,y,color) {
+            for(let i=0;i<10;i++) particles.push({ x,y, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5, color, life:12+Math.random()*10 });
+        }
+
+        function endGame() {
+            gameOver=true; gameRunning=false;
+            if(score>bestScore){bestScore=score;localStorage.setItem('invaders-best',bestScore);}
+            document.getElementById('best').textContent=bestScore;
+            document.getElementById('loseScore').textContent=score;
+            document.getElementById('loseWave').textContent=wave;
+            document.getElementById('loseOverlay').style.display='block';
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,W,H);
+            ctx.fillStyle='#050510'; ctx.fillRect(0,0,W,H);
+
+            // 星星
+            ctx.fillStyle='rgba(255,255,255,0.2)';
+            for(let x=5;x<W;x+=30) for(let y=5;y<H;y+=30) { ctx.fillRect(x+Math.sin(y)*10, y, 1, 1); }
+
+            // 敌人
+            for (const e of enemies) {
+                if (!e.alive) continue;
+                const g = ctx.createLinearGradient(e.x, e.y, e.x, e.y+e.h);
+                if (e.type==='top') { g.addColorStop(0,'#ff6688'); g.addColorStop(1,'#cc2244'); }
+                else if (e.type==='mid') { g.addColorStop(0,'#ffaa44'); g.addColorStop(1,'#cc6600'); }
+                else { g.addColorStop(0,'#66ee88'); g.addColorStop(1,'#228844'); }
+                ctx.fillStyle = g;
+                ctx.beginPath(); ctx.roundRect(e.x, e.y, e.w, e.h, 4); ctx.fill();
+                // 眼睛
+                ctx.fillStyle='#fff';
+                ctx.fillRect(e.x+6, e.y+7, 6, 6); ctx.fillRect(e.x+18, e.y+7, 6, 6);
+                ctx.fillStyle='#111';
+                ctx.fillRect(e.x+8, e.y+9, 3, 3); ctx.fillRect(e.x+20, e.y+9, 3, 3);
+            }
+
+            // 子弹
+            ctx.fillStyle='#00ff88';
+            for (const b of bullets) ctx.fillRect(b.x, b.y, 4, BULLET_H);
+            ctx.fillStyle='#ff4444';
+            for (const b of enemyBullets) ctx.fillRect(b.x-2, b.y-2, 4, 8);
+
+            // 玩家
+            const pg = ctx.createLinearGradient(player.x, player.y, player.x, player.y+player.h);
+            pg.addColorStop(0,'#00d4ff'); pg.addColorStop(1,'#0088bb');
+            ctx.fillStyle = pg;
+            ctx.beginPath();
+            ctx.moveTo(player.x+player.w/2, player.y);
+            ctx.lineTo(player.x+player.w, player.y+player.h);
+            ctx.lineTo(player.x+player.w-6, player.y+player.h-4);
+            ctx.lineTo(player.x+6, player.y+player.h-4);
+            ctx.lineTo(player.x, player.y+player.h);
+            ctx.closePath(); ctx.fill();
+            // 引擎火焰
+            ctx.fillStyle='#ff6644';
+            ctx.fillRect(player.x+player.w/2-3, player.y+player.h, 6, 6+Math.random()*4);
+
+            // 粒子
+            for (const p of particles) {
+                const a = p.life/22;
+                ctx.fillStyle = p.color+Math.floor(a*255).toString(16).padStart(2,'0');
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2*a, 0, Math.PI*2); ctx.fill();
+            }
+
+            if (!gameRunning && !gameOver) {
+                ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(0,0,W,H);
+                ctx.fillStyle='#fff'; ctx.font='bold 16px "Segoe UI"'; ctx.textAlign='center';
+                ctx.fillText('按空格开始战斗', W/2, H/2);
+                ctx.textAlign='start';
+            }
+        }
+
+        function loop() { update(); draw(); animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown',e=>{
+            if (e.key==='ArrowLeft'||e.key==='a') { leftDown=true; e.preventDefault(); }
+            if (e.key==='ArrowRight'||e.key==='d') { rightDown=true; e.preventDefault(); }
+            if (e.key===' ') { e.preventDefault(); if (!gameRunning&&!gameOver) gameRunning=true; spaceDown=true; }
+        });
+        document.addEventListener('keyup',e=>{
+            if (e.key==='ArrowLeft'||e.key==='a') leftDown=false;
+            if (e.key==='ArrowRight'||e.key==='d') rightDown=false;
+            if (e.key===' ') spaceDown=false;
+        });
+
+        // 触屏
+        canvas.addEventListener('touchstart',e=>{e.preventDefault();if(!gameRunning&&!gameOver)gameRunning=true;spaceDown=true;});
+        canvas.addEventListener('touchend',e=>{e.preventDefault();spaceDown=false;});
+        canvas.addEventListener('touchmove',e=>{
+            e.preventDefault();
+            const t = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            player.x = ((t.clientX-rect.left)/rect.width)*W - player.w/2;
+            player.x = Math.max(0,Math.min(W-player.w, player.x));
+        },{passive:false});
+
+        document.getElementById('startBtn').addEventListener('click',newGame);
+        window.addEventListener('resize',()=>{resize();draw();});
+        newGame(); loop();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
