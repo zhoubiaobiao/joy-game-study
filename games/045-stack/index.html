@@ -101,7 +101,7 @@
             if (perfect) {
                 combo++;
                 document.getElementById('combo').textContent = combo;
-                newW === lastBlock.w; // Keep same width on perfect
+                // Perfect alignment bonus
                 // Bonus particles stored for drawing
                 movingBlock.perfect = true;
             } else {
@@ -154,7 +154,7 @@
             ctx.fillStyle = '#0a0a1e'; ctx.fillRect(0, 0, W, H);
 
             ctx.save();
-            ctx.translate(0, camY);
+            ctx.translate(0, -camY);
 
             // Placed blocks
             const baseY = H * 0.85;

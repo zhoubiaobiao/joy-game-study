@@ -166,7 +166,7 @@
                             document.getElementById('score').textContent = score;
                             if (score > bestScore) { bestScore = score; localStorage.setItem('shooter-best', bestScore); document.getElementById('best').textContent = bestScore; }
                             addExplosion(e.x, e.y, e.color, e.isBoss ? 30 : 8);
-                            if (e.isBoss) { hasBoss = false; weaponLevel = Math.min(3, weaponLevel + 1); }
+                            if (e.isBoss) { hasBoss = false; weaponLevel = Math.min(3, weaponLevel + 1); bossTimer = 0; }
                             if (Math.random() < 0.15) spawnPowerUp(e.x, e.y);
                             enemies.splice(ei, 1);
                         } else {

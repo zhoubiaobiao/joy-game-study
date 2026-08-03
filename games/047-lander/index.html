@@ -89,6 +89,9 @@
         }
 
         function update() {
+            // Update particles always
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
             if (gameOver || lander.landed) return;
 
             // Gravity
@@ -225,10 +228,7 @@
             ctx.textAlign = 'start';
         }
 
-        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); else {
-            // Still draw one more frame for particles
-            if (particles.length > 0) { update(); draw(); setTimeout(() => { if (particles.length > 0) requestAnimationFrame(loop); }, 100); }
-        }}
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
 
         // Controls
         document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); thrusting = true; } });

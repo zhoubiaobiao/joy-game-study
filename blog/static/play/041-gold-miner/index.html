@@ -98,7 +98,7 @@
             document.getElementById('timer').textContent = '60';
             document.getElementById('best').textContent = bestScore;
             document.getElementById('endOverlay').style.display = 'none';
-            hookAngle = 0; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null;
+            hookAngle = Math.PI / 2; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null; swingPhase = 0;
             spawnItems();
             startTimer();
             loop();
@@ -129,7 +129,7 @@
             timeLeft = Math.min(90, timeLeft + 15);
             document.getElementById('level').textContent = level;
             document.getElementById('timer').textContent = Math.ceil(timeLeft);
-            hookAngle = 0; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null;
+            hookAngle = Math.PI / 2; hookLen = 40; hookState = 'swing'; hookSpeed = 0; targetItem = null; swingPhase = 0;
             spawnItems();
         }
 
@@ -141,10 +141,10 @@
 
         function update() {
             if (gameOver) return;
-            // Swing
+            // Pendulum swing using sine for natural oscillation
             if (hookState === 'swing') {
-                hookAngle += 0.04;
-                if (hookAngle > Math.PI || hookAngle < -0.3) hookAngle = Math.max(-0.3, Math.min(Math.PI, hookAngle));
+                swingPhase = (swingPhase || 0) + 0.04;
+                hookAngle = Math.PI / 2 + Math.sin(swingPhase) * 1.1;
             }
             // Extend
             if (hookState === 'extend') {

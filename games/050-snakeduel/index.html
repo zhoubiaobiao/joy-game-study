@@ -58,7 +58,7 @@
             document.getElementById('endOverlay').style.display = 'none';
             moveTimer1 = 0; moveTimer2 = 0;
             resetRound();
-            if (!particles) particles = [];
+            particles = [];
             if (typeof score1 === 'undefined') { score1 = 0; score2 = 0; }
             document.getElementById('score1').textContent = score1;
             document.getElementById('score2').textContent = score2;
@@ -66,9 +66,8 @@
         }
 
         function resetRound() {
-            s1 = { body: [{ x: 5, y: ROWS / 2 }], dir: { x: 1, y: 0 }, color: '#44aaff', glow: '#44aaff44', alive: true };
-            s2 = { body: [{ x: COLS - 6, y: ROWS / 2 }], dir: { x: -1, y: 0 }, color: '#ff4444', glow: '#ff444444', alive: true };
-            particles = [];
+            s1 = { body: [{ x: 5, y: ROWS / 2 }], dir: { x: 1, y: 0 }, lastDir: { x: 1, y: 0 }, color: '#44aaff', glow: '#44aaff44', alive: true };
+            s2 = { body: [{ x: COLS - 6, y: ROWS / 2 }], dir: { x: -1, y: 0 }, lastDir: { x: -1, y: 0 }, color: '#ff4444', glow: '#ff444444', alive: true };
             placeFood();
         }
 
@@ -179,6 +178,7 @@
 
             snake.body.unshift(newHead);
             snake.body.pop();
+            snake.lastDir = { x: snake.dir.x, y: snake.dir.y };
         }
 
         function draw() {
@@ -258,19 +258,19 @@
         document.addEventListener('keydown', e => {
             keys[e.key.toLowerCase()] = true;
             e.preventDefault();
-            // P1: WASD
+            // P1: WASD (use lastDir to prevent 180° reversal exploit)
             if (s1.alive) {
-                if (e.key === 'w' && s1.dir.y !== 1) { s1.dir = { x: 0, y: -1 }; moveTimer1 = 99; }
-                if (e.key === 's' && s1.dir.y !== -1) { s1.dir = { x: 0, y: 1 }; moveTimer1 = 99; }
-                if (e.key === 'a' && s1.dir.x !== 1) { s1.dir = { x: -1, y: 0 }; moveTimer1 = 99; }
-                if (e.key === 'd' && s1.dir.x !== -1) { s1.dir = { x: 1, y: 0 }; moveTimer1 = 99; }
+                if (e.key === 'w' && s1.lastDir.y !== 1) { s1.dir = { x: 0, y: -1 }; moveTimer1 = 99; }
+                if (e.key === 's' && s1.lastDir.y !== -1) { s1.dir = { x: 0, y: 1 }; moveTimer1 = 99; }
+                if (e.key === 'a' && s1.lastDir.x !== 1) { s1.dir = { x: -1, y: 0 }; moveTimer1 = 99; }
+                if (e.key === 'd' && s1.lastDir.x !== -1) { s1.dir = { x: 1, y: 0 }; moveTimer1 = 99; }
             }
-            // P2: Arrows
+            // P2: Arrows (use lastDir to prevent 180° reversal exploit)
             if (s2.alive) {
-                if (e.key === 'arrowup' && s2.dir.y !== 1) { s2.dir = { x: 0, y: -1 }; moveTimer2 = 99; }
-                if (e.key === 'arrowdown' && s2.dir.y !== -1) { s2.dir = { x: 0, y: 1 }; moveTimer2 = 99; }
-                if (e.key === 'arrowleft' && s2.dir.x !== 1) { s2.dir = { x: -1, y: 0 }; moveTimer2 = 99; }
-                if (e.key === 'arrowright' && s2.dir.x !== -1) { s2.dir = { x: 1, y: 0 }; moveTimer2 = 99; }
+                if (e.key === 'arrowup' && s2.lastDir.y !== 1) { s2.dir = { x: 0, y: -1 }; moveTimer2 = 99; }
+                if (e.key === 'arrowdown' && s2.lastDir.y !== -1) { s2.dir = { x: 0, y: 1 }; moveTimer2 = 99; }
+                if (e.key === 'arrowleft' && s2.lastDir.x !== 1) { s2.dir = { x: -1, y: 0 }; moveTimer2 = 99; }
+                if (e.key === 'arrowright' && s2.lastDir.x !== -1) { s2.dir = { x: 1, y: 0 }; moveTimer2 = 99; }
             }
         });
         document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
