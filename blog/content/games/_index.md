@@ -12,5 +12,6 @@ menu: main
 | 002 | 🧩 数独 | [开始游戏](/joy-game-study/play/002-sudoku/) |
 | 003 | 🔢 2048 | [开始游戏](/joy-game-study/play/003-2048/) |
 | 004 | 🧱 俄罗斯方块 | [开始游戏](/joy-game-study/play/004-tetris/) |
+| 005 | 🧱 打砖块 | [开始游戏](/joy-game-study/play/005-breakout/) |
 
-> 进度：4 / 100
+> 进度：5 / 100
