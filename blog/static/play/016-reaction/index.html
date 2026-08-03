@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>016 - 反应测试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 14px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.2em, 4vw, 1.6em); margin-bottom: 4px; }
+
+        .mode-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; justify-content: center; }
+        .mode-btn {
+            padding: 6px 14px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mode-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
+
+        .test-area {
+            width: 100%; max-width: 400px; aspect-ratio: 1;
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background 0.1s;
+            border: 3px solid #333; position: relative;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .test-area.waiting { background: #cc2222; border-color: #ff4444; }
+        .test-area.ready { background: #22aa44; border-color: #44ff66; }
+        .test-area.idle { background: #1a2840; border-color: #333; }
+        .test-area.result { background: #16213e; border-color: #00d4ff; }
+
+        .test-text { font-size: clamp(1.5em, 6vw, 2.5em); font-weight: bold; text-align: center; }
+        .test-sub { font-size: clamp(0.7em, 3vw, 1em); color: #888; margin-top: 8px; }
+
+        .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 80%; max-width: 280px; }
+        .choice-btn {
+            aspect-ratio: 1; border: 3px solid #555; border-radius: 14px;
+            cursor: pointer; font-size: 2em; transition: all 0.1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .choice-btn:active { transform: scale(0.92); }
+
+        .rapid-target {
+            width: 70px; height: 70px; background: #00d4ff; border-radius: 50%;
+            cursor: pointer; position: absolute; transition: all 0.05s;
+        }
+        .rapid-target:active { transform: scale(1.15); background: #ffd700; }
+
+        .stats { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; margin-top: 10px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; }
+        .stats .stat { text-align: center; }
+        .stats .stat .val { color: #ffd700; font-weight: bold; font-size: 1.4em; }
+        .stats .stat .lbl { font-size: 0.7em; color: #666; }
+
+        .history { margin-top: 10px; display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; max-width: 400px; }
+        .history .dot { width: 8px; height: 20px; border-radius: 2px; }
+        .history .dot.fast { background: #44dd66; }
+        .history .dot.med { background: #ffaa00; }
+        .history .dot.slow { background: #ff4444; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 6px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>⚡ 反应测试 — #016</h1>
+
+    <div class="mode-row">
+        <button class="mode-btn active" data-mode="simple">🎯 简单反应</button>
+        <button class="mode-btn" data-mode="choice">🎨 选择反应</button>
+        <button class="mode-btn" data-mode="rapid">🔥 快速连击</button>
+    </div>
+
+    <div class="test-area idle" id="testArea">
+        <div id="testContent">
+            <div class="test-text" id="testText">点击开始</div>
+            <div class="test-sub" id="testSub">测试你的反应速度</div>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><div class="val" id="lastTime">---</div><div class="lbl">最近 (ms)</div></div>
+        <div class="stat"><div class="val" id="bestTime">---</div><div class="lbl">最佳 (ms)</div></div>
+        <div class="stat"><div class="val" id="avgTime">---</div><div class="lbl">平均 (ms)</div></div>
+        <div class="stat"><div class="val" id="count">0</div><div class="lbl">测试次数</div></div>
+    </div>
+
+    <div class="history" id="history"></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="resetBtn">🔄 重置统计</button>
+    </div>
+    <div class="info">💡 简单：等变色点击 | 选择：点正确颜色 | 连击：10秒内尽可能多点</div>
+
+    <script>
+        const area = document.getElementById('testArea');
+        const textEl = document.getElementById('testText');
+        const subEl = document.getElementById('testSub');
+        const contentEl = document.getElementById('testContent');
+        let mode = 'simple', state = 'idle', timer = null, waitTimer = null;
+        let results = [], bestTime = Infinity, rapidHits = 0, rapidStart = 0;
+        let lastTime = null;
+        const COLORS = ['#ff4444','#44bb44','#4488ff','#ffaa00'];
+
+        function setMode(m) {
+            mode = m; state = 'idle'; clearTimeout(timer); clearTimeout(waitTimer);
+            area.className = 'test-area idle';
+            contentEl.innerHTML = '<div class="test-text" id="testText">点击开始</div><div class="test-sub" id="testSub">测试你的反应速度</div>';
+            rapidHits = 0;
+        }
+
+        function addResult(ms) {
+            results.push(ms); lastTime = ms;
+            if (ms < bestTime) bestTime = ms;
+            document.getElementById('lastTime').textContent = ms;
+            document.getElementById('bestTime').textContent = bestTime===Infinity?'---':bestTime;
+            document.getElementById('avgTime').textContent = Math.round(results.reduce((a,b)=>a+b,0)/results.length);
+            document.getElementById('count').textContent = results.length;
+            updateHistory();
+        }
+
+        function updateHistory() {
+            const h = document.getElementById('history');
+            h.innerHTML = results.slice(-40).map(r=>{
+                const cls = r<200?'fast':r<350?'med':'slow';
+                return `<div class="dot ${cls}" style="height:${Math.max(4,40-r/10)}px" title="${r}ms"></div>`;
+            }).join('');
+        }
+
+        // === 简单反应 ===
+        function simpleStart() {
+            state = 'waiting'; area.className = 'test-area waiting';
+            textEl.textContent = '等待绿色...'; subEl.textContent = '看到绿色立即点击！';
+            const delay = 800 + Math.random() * 2500;
+            waitTimer = setTimeout(() => {
+                if (state !== 'waiting') return;
+                state = 'ready'; area.className = 'test-area ready';
+                textEl.textContent = '现在！'; subEl.textContent = '';
+                timer = Date.now();
+            }, delay);
+        }
+
+        function simpleClick() {
+            if (state === 'idle') { simpleStart(); return; }
+            if (state === 'waiting') { clearTimeout(waitTimer); textEl.textContent = '太早了！'; subEl.textContent = '等绿色出现再点击'; area.className = 'test-area result'; state='idle'; setTimeout(()=>area.className='test-area idle',1500); return; }
+            if (state === 'ready') { const ms = Date.now()-timer; addResult(ms); textEl.textContent = ms+' ms'; subEl.textContent = ms<180?'⚡ 闪电反应！':ms<280?'👏 很快！':ms<400?'👍 不错':'🐢 继续加油'; area.className = 'test-area result'; state='idle'; setTimeout(()=>{area.className='test-area idle'; textEl.textContent='点击开始'; subEl.textContent='测试你的反应速度';},1200); }
+        }
+
+        // === 选择反应 ===
+        let choiceTarget = null;
+        function choiceStart() {
+            state = 'ready'; area.className = 'test-area ready';
+            const targetColor = COLORS[Math.floor(Math.random()*COLORS.length)];
+            choiceTarget = targetColor;
+            const shuffled = [...COLORS].sort(()=>Math.random()-0.5);
+            contentEl.innerHTML = `<div class="test-text" style="margin-bottom:16px;">点击 <span style="color:${targetColor}">■</span></div><div class="choice-grid">${shuffled.map(c=>`<div class="choice-btn" style="background:${c}" data-color="${c}"></div>`).join('')}</div>`;
+            document.querySelectorAll('.choice-btn').forEach(b=>b.addEventListener('click',()=>choiceClick(b.dataset.color)));
+            timer = Date.now();
+        }
+
+        function choiceClick(color) {
+            if (state !== 'ready') return;
+            const ms = Date.now() - timer;
+            if (color === choiceTarget) {
+                addResult(ms);
+                textEl.textContent = ms+' ms ✅';
+                subEl.textContent = ms<350?'⚡ 又快又准！':ms<550?'👍 不错！':'🎯 准确但可以更快';
+            } else {
+                textEl.textContent = '❌ 选错了！';
+                subEl.textContent = '下次注意看颜色';
+            }
+            area.className = 'test-area result'; state='idle';
+            setTimeout(()=>{contentEl.innerHTML='<div class="test-text" id="testText">点击开始</div><div class="test-sub" id="testSub">看准颜色再点击</div>'; area.className='test-area idle';},1200);
+        }
+
+        // === 快速连击 ===
+        function rapidStart() {
+            state = 'rapid'; rapidHits = 0; rapidStart = Date.now();
+            area.className = 'test-area idle';
+            contentEl.innerHTML = '<div class="test-text" id="testText">0</div><div class="test-sub">10 秒倒计时！</div>';
+            // 生成第一个目标
+            spawnRapidTarget();
+            // 10秒倒计时
+            let remaining = 10;
+            const cd = setInterval(() => { remaining--; subEl.textContent = remaining+' 秒...'; if(remaining<=0){clearInterval(cd);rapidEnd();} },1000);
+            window._rapidCd = cd;
+        }
+
+        function spawnRapidTarget() {
+            if (state !== 'rapid') return;
+            const ex = document.querySelector('.rapid-target');
+            if (ex) ex.remove();
+            const t = document.createElement('div');
+            t.className = 'rapid-target';
+            const maxX = area.clientWidth - 70, maxY = area.clientHeight - 70;
+            t.style.left = (15+Math.random()*Math.max(0,maxX-30))+'px';
+            t.style.top = (15+Math.random()*Math.max(0,maxY-30))+'px';
+            t.addEventListener('click',(e)=>{e.stopPropagation();rapidHit(t);});
+            area.appendChild(t);
+        }
+
+        function rapidHit(target) {
+            if (state !== 'rapid') return;
+            rapidHits++; target.remove();
+            document.getElementById('testText').textContent = rapidHits;
+            setTimeout(()=>spawnRapidTarget(), 50);
+        }
+
+        function rapidEnd() {
+            state = 'idle'; clearInterval(window._rapidCd);
+            const ex = document.querySelector('.rapid-target'); if (ex) ex.remove();
+            const avgMs = rapidHits>0 ? Math.round(10000/rapidHits) : 0;
+            textEl.textContent = rapidHits+' 次';
+            subEl.textContent = '平均 '+avgMs+'ms/次';
+            area.className = 'test-area result';
+            if (rapidHits > 0) addResult(avgMs);
+            setTimeout(()=>{contentEl.innerHTML='<div class="test-text" id="testText">点击开始</div><div class="test-sub" id="testSub">10秒内尽可能多点</div>'; area.className='test-area idle';},2000);
+        }
+
+        function resetStats() {
+            results = []; bestTime = Infinity; lastTime = null;
+            document.getElementById('lastTime').textContent = '---';
+            document.getElementById('bestTime').textContent = '---';
+            document.getElementById('avgTime').textContent = '---';
+            document.getElementById('count').textContent = '0';
+            document.getElementById('history').innerHTML = '';
+        }
+
+        area.addEventListener('click', () => {
+            if (mode === 'simple') simpleClick();
+            else if (mode === 'choice' && state === 'idle') choiceStart();
+            else if (mode === 'rapid' && state === 'idle') rapidStart();
+        });
+
+        document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', () => {
+            document.querySelectorAll('.mode-btn').forEach(x => x.classList.remove('active'));
+            b.classList.add('active'); setMode(b.dataset.mode);
+        }));
+
+        document.getElementById('resetBtn').addEventListener('click', resetStats);
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

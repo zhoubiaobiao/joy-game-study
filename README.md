@@ -42,7 +42,7 @@
 └── README.md               ← 本文件
 ```
 
-## 🎮 游戏列表（15/100）
+## 🎮 游戏列表（20/100）
 
 | # | 游戏 | 类型 | 技术点 | 试玩 |
 |---|------|------|--------|------|
@@ -61,6 +61,11 @@
 | 013 | 📦 推箱子 | 逻辑 | 关卡设计、撤销栈 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/013-sokoban/) |
 | 014 | 🔪 水果忍者 | 动作 | 手势识别、粒子特效 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/014-fruit/) |
 | 015 | 🏰 塔防 | 策略 | 寻路、波次生成 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/015-td/) |
+| 016 | ⚡ 反应测试 | 反应 | 计时、统计、多模式 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/016-reaction/) |
+| 017 | ⌨️ 打字游戏 | 打字 | 单词消除、WPM统计 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/017-typing/) |
+| 018 | 🏛️ 迷宫探索 | 算法 | DFS迷宫、战争迷雾 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/018-maze/) |
+| 019 | 🔨 打地鼠 | 反应 | 随机弹出、计时 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/019-whack/) |
+| 020 | 💎 消消乐 | 益智 | 三消、连锁消除 | [▶](https://zhoubiaobiao.github.io/joy-game-study/play/020-match3/) |
 
 ## 🚀 本地运行
 
@@ -87,4 +92,4 @@ hugo server
 
 ---
 
-> 进度：15 / 100 | 更新于 2026-08-03
+> 进度：20 / 100 | 更新于 2026-08-03

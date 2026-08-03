@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>018 - 迷宫探索</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 14px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .diff-row { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; justify-content: center; }
+        .diff-btn {
+            padding: 5px 12px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.7em, 2.5vw, 0.85em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .diff-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 460px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .btn.toggle-on { background: #ffd70022; border-color: #ffd700; color: #ffd700; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏛️ 迷宫探索 — #018</h1>
+
+    <div class="diff-row">
+        <button class="diff-btn active" data-size="15">🟢 15×15</button>
+        <button class="diff-btn" data-size="21">🟡 21×21</button>
+        <button class="diff-btn" data-size="31">🔴 31×31</button>
+    </div>
+
+    <div class="top-bar">
+        <span>⏱ <span id="timer">00:00</span></span>
+        <span>步数：<span id="steps">0</span></span>
+        <span>最佳：<span id="best">---</span></span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新迷宫</button>
+        <button class="btn" id="fogBtn">🌫️ 迷雾</button>
+    </div>
+    <div class="info">💡 方向键/WASD 移动 | 从 🟢 走到 🔴 | 开启迷雾增加难度</div>
+
+    <div class="overlay win" id="winOverlay">
+        <h2>🎉 找到出口！</h2>
+        <p>用时：<strong id="winTime">0</strong> | 步数：<strong id="winSteps">0</strong></p>
+        <p id="newRecord" style="color:#ffd700;display:none;">🏆 新纪录！</p>
+        <button onclick="newMaze()">🔄 新迷宫</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let MAZE_SIZE=15, CELL, maze=[], playerR, playerC, goalR, goalC, revealed=[];
+        let steps, timerSec, timerInterval, fogMode=false, animId, won=false;
+        let bestTime = JSON.parse(localStorage.getItem('maze-best')||'{}');
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 460);
+            CELL = Math.floor(maxW / MAZE_SIZE);
+            canvas.width = CELL * MAZE_SIZE; canvas.height = CELL * MAZE_SIZE;
+        }
+
+        // DFS 迷宫生成
+        function generateMaze() {
+            maze = Array.from({length:MAZE_SIZE},()=>Array(MAZE_SIZE).fill(1)); // 1=墙
+            revealed = Array.from({length:MAZE_SIZE},()=>Array(MAZE_SIZE).fill(false));
+
+            function carve(r,c) {
+                maze[r][c] = 0;
+                const dirs = [[-2,0],[2,0],[0,-2],[0,2]];
+                for (let i=dirs.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [dirs[i],dirs[j]]=[dirs[j],dirs[i]]; }
+                for (const [dr,dc] of dirs) {
+                    const nr=r+dr, nc=c+dc;
+                    if (nr>=0&&nr<MAZE_SIZE&&nc>=0&&nc<MAZE_SIZE&&maze[nr][nc]===1) {
+                        maze[r+dr/2][c+dc/2]=0; carve(nr,nc);
+                    }
+                }
+            }
+            carve(1,1);
+            playerR=1; playerC=1;
+            goalR=MAZE_SIZE-2; goalC=MAZE_SIZE-2;
+            maze[goalR][goalC]=0;
+            steps=0; timerSec=0; won=false;
+            clearInterval(timerInterval); timerInterval=null;
+            document.getElementById('timer').textContent='00:00';
+            document.getElementById('steps').textContent='0';
+            document.getElementById('winOverlay').style.display='none';
+            resize();
+            revealArea();
+        }
+
+        function revealArea() {
+            if (!fogMode) {
+                for (let r=0;r<MAZE_SIZE;r++) for(let c=0;c<MAZE_SIZE;c++) revealed[r][c]=true;
+            } else {
+                for (let r=0;r<MAZE_SIZE;r++) for(let c=0;c<MAZE_SIZE;c++) {
+                    if (Math.abs(r-playerR)+Math.abs(c-playerC) <= 3) revealed[r][c]=true;
+                }
+            }
+        }
+
+        function startTimer() {
+            if (timerInterval) return;
+            timerInterval = setInterval(()=>{
+                timerSec++;
+                document.getElementById('timer').textContent = formatTime(timerSec);
+            },1000);
+        }
+
+        function formatTime(s) { return Math.floor(s/60).toString().padStart(2,'0')+':'+(s%60).toString().padStart(2,'0'); }
+
+        function move(dr,dc) {
+            if (won) return;
+            const nr=playerR+dr, nc=playerC+dc;
+            if (nr<0||nr>=MAZE_SIZE||nc<0||nc>=MAZE_SIZE||maze[nr][nc]===1) return;
+            startTimer();
+            playerR=nr; playerC=nc; steps++;
+            document.getElementById('steps').textContent=steps;
+            revealArea();
+
+            if (playerR===goalR && playerC===goalC) {
+                won=true; clearInterval(timerInterval); timerInterval=null;
+                document.getElementById('winTime').textContent=formatTime(timerSec);
+                document.getElementById('winSteps').textContent=steps;
+                const key = MAZE_SIZE+(fogMode?'f':'');
+                const isNew = !bestTime[key] || timerSec<bestTime[key];
+                document.getElementById('newRecord').style.display = isNew?'block':'none';
+                if (isNew) { bestTime[key]=timerSec; localStorage.setItem('maze-best',JSON.stringify(bestTime)); }
+                document.getElementById('best').textContent = bestTime[key]?formatTime(bestTime[key]):'---';
+                document.getElementById('winOverlay').style.display='block';
+            }
+            draw();
+        }
+
+        function newMaze() { generateMaze(); updateBestDisplay(); draw(); }
+
+        function updateBestDisplay() {
+            const key = MAZE_SIZE+(fogMode?'f':'');
+            document.getElementById('best').textContent = bestTime[key]?formatTime(bestTime[key]):'---';
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle='#0a0a1a'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+            for (let r=0;r<MAZE_SIZE;r++) for (let c=0;c<MAZE_SIZE;c++) {
+                const x=c*CELL, y=r*CELL;
+
+                if (!revealed[r][c]) { ctx.fillStyle='#111'; ctx.fillRect(x,y,CELL,CELL); continue; }
+
+                if (maze[r][c]===1) {
+                    ctx.fillStyle='#2a3a5c';
+                    ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+                    ctx.fillStyle='rgba(255,255,255,0.05)';
+                    ctx.fillRect(x+1,y+1,CELL-2,2);
+                } else {
+                    ctx.fillStyle='#1a2840';
+                    ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+                }
+            }
+
+            // 目标
+            if (revealed[goalR][goalC]) {
+                const gx=goalC*CELL, gy=goalR*CELL;
+                ctx.fillStyle='#ff444433'; ctx.fillRect(gx+2,gy+2,CELL-4,CELL-4);
+                ctx.fillStyle='#ff4444'; ctx.font='bold '+(CELL*0.6)+'px "Segoe UI Emoji"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+                ctx.fillText('🚩', gx+CELL/2, gy+CELL/2); ctx.textAlign='start'; ctx.textBaseline='alphabetic';
+            }
+
+            // 玩家
+            const px=playerC*CELL, py=playerR*CELL;
+            ctx.fillStyle='#00d4ff'; ctx.beginPath(); ctx.arc(px+CELL/2, py+CELL/2, CELL*0.35, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle='#fff'; ctx.font='bold '+(CELL*0.5)+'px "Segoe UI Emoji"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillText('🏃', px+CELL/2, py+CELL/2); ctx.textAlign='start'; ctx.textBaseline='alphabetic';
+
+            // 起点标记
+            if (revealed[1][1] && !(playerR===1&&playerC===1)) {
+                ctx.fillStyle='rgba(0,255,0,0.15)'; ctx.fillRect(CELL+2,CELL+2,CELL-4,CELL-4);
+            }
+        }
+
+        function loop() { draw(); animId=requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown',e=>{
+            if (won) return;
+            if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') { e.preventDefault(); move(-1,0); }
+            if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') { e.preventDefault(); move(1,0); }
+            if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') { e.preventDefault(); move(0,-1); }
+            if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') { e.preventDefault(); move(0,1); }
+        });
+
+        // 触屏滑动
+        let tsx=0,tsy=0;
+        canvas.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;});
+        canvas.addEventListener('touchend',e=>{
+            if(won)return;
+            const dx=e.changedTouches[0].clientX-tsx, dy=e.changedTouches[0].clientY-tsy;
+            if(Math.abs(dx)<12&&Math.abs(dy)<12) return;
+            if(Math.abs(dx)>Math.abs(dy)) move(0,dx>0?1:-1); else move(dy>0?1:-1,0);
+        });
+
+        document.getElementById('newBtn').addEventListener('click',newMaze);
+        document.getElementById('fogBtn').addEventListener('click',function(){
+            fogMode=!fogMode; this.classList.toggle('toggle-on',fogMode);
+            this.textContent = fogMode?'🌫️ 迷雾:开':'🌫️ 迷雾';
+            newMaze();
+        });
+
+        document.querySelectorAll('.diff-btn').forEach(b=>b.addEventListener('click',()=>{
+            document.querySelectorAll('.diff-btn').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active'); MAZE_SIZE=parseInt(b.dataset.size); newMaze();
+        }));
+
+        window.addEventListener('resize',()=>{resize();draw();});
+        generateMaze(); updateBestDisplay(); loop();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>019 - 打地鼠</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 12px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.2em, 4vw, 1.6em); margin-bottom: 4px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 8px; font-size: clamp(0.85em, 2.5vw, 1em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .board {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 10px; width: 100%; max-width: 360px; aspect-ratio: 1;
+        }
+        .hole {
+            background: #0f0f23; border: 3px solid #333; border-radius: 50%;
+            position: relative; overflow: hidden; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            transition: border-color 0.2s;
+        }
+        .hole.active { border-color: #886633; }
+        .mole {
+            position: absolute; bottom: -80%; left: 50%; transform: translateX(-50%);
+            width: 80%; height: 80%; border-radius: 50% 50% 0 0;
+            transition: bottom 0.15s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            display: flex; align-items: center; justify-content: center;
+            font-size: clamp(2em, 12vw, 3.5em);
+        }
+        .hole.active .mole { bottom: 5%; }
+        .hole.whacked .mole { bottom: 5%; filter: brightness(1.5); }
+        .hole.whacked { border-color: #44ff66; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 10px 22px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.8em, 2.5vw, 0.95em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; font-size: 1.2em; padding: 14px 32px; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 6px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔨 打地鼠 — #019</h1>
+
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>连击：<span id="combo">x1</span></span>
+        <span>剩余：<span id="timeLeft">30</span>s</span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+
+    <div class="board" id="board"></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="startBtn">🔨 开始游戏</button>
+    </div>
+    <div class="info">💡 点击冒出地面的地鼠 | 金色地鼠 +3 分 | 30 秒计时</div>
+
+    <div class="overlay" id="endOverlay">
+        <h2>⏰ 时间到！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 最高连击：<strong id="endCombo">x1</strong></p>
+        <p id="newBest" style="color:#ffd700;display:none;">🏆 新纪录！</p>
+        <button onclick="startGame()">🔨 再来一局</button>
+    </div>
+
+    <script>
+        const ROWS=3, COLS=3;
+        let holes=[], score, combo, maxCombo, timeLeft, bestScore, gameRunning, timerInterval;
+        let activeHole = -1, spawnTimer;
+
+        const EMOJIS = ['🐹','🐭','🐿️'];
+
+        function createBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let i=0; i<ROWS*COLS; i++) {
+                const hole = document.createElement('div');
+                hole.className = 'hole';
+                hole.dataset.idx = i;
+                const mole = document.createElement('div');
+                mole.className = 'mole';
+                mole.textContent = EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+                hole.appendChild(mole);
+
+                hole.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    if (!gameRunning) return;
+                    if (hole.classList.contains('active') && !hole.classList.contains('whacked')) {
+                        // 击中！
+                        const isGold = hole.dataset.gold === 'true';
+                        hole.classList.add('whacked');
+                        score += isGold ? 3 : 1;
+                        combo++; if (combo > maxCombo) maxCombo = combo;
+                        document.getElementById('score').textContent = score;
+                        document.getElementById('combo').textContent = 'x' + combo;
+
+                        // 粒子效果
+                        const rect = hole.getBoundingClientRect();
+                        spawnSparks(rect.left+rect.width/2, rect.top+rect.height/2, isGold ? '#ffd700' : '#ff8844');
+
+                        setTimeout(() => { hole.classList.remove('active','whacked'); delete hole.dataset.gold; }, 100);
+                    }
+                });
+
+                board.appendChild(hole);
+                holes.push(hole);
+            }
+        }
+
+        function spawnSparks(x, y, color) {
+            // 简单的视觉反馈：闪烁边框
+            // 不在canvas上，省略粒子
+        }
+
+        function spawnMole() {
+            if (!gameRunning) return;
+            // 隐藏上一个
+            if (activeHole >= 0) {
+                holes[activeHole].classList.remove('active','whacked');
+                delete holes[activeHole].dataset.gold;
+                combo = 1; document.getElementById('combo').textContent = 'x1';
+            }
+
+            // 随机选洞
+            let idx;
+            do { idx = Math.floor(Math.random() * 9); } while (idx === activeHole);
+            activeHole = idx;
+
+            // 随机金色地鼠 (20%概率)
+            const isGold = Math.random() < 0.2;
+            if (isGold) holes[idx].dataset.gold = 'true';
+            const mole = holes[idx].querySelector('.mole');
+            mole.textContent = isGold ? '⭐' : EMOJIS[Math.floor(Math.random()*EMOJIS.length)];
+            holes[idx].classList.add('active');
+
+            // 自动缩回
+            const duration = Math.max(400, 1200 - score*5);
+            clearTimeout(spawnTimer);
+            spawnTimer = setTimeout(() => spawnMole(), duration);
+        }
+
+        function startGame() {
+            score = 0; combo = 1; maxCombo = 1; timeLeft = 30; gameRunning = true;
+            bestScore = parseInt(localStorage.getItem('whack-best')||'0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('combo').textContent = 'x1';
+            document.getElementById('timeLeft').textContent = '30';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('startBtn').textContent = '⏳ 游戏中...';
+            holes.forEach(h => { h.classList.remove('active','whacked'); delete h.dataset.gold; });
+            activeHole = -1;
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timeLeft').textContent = timeLeft;
+                if (timeLeft <= 0) endGame();
+            }, 1000);
+            spawnMole();
+        }
+
+        function endGame() {
+            gameRunning = false; clearInterval(timerInterval); clearTimeout(spawnTimer);
+            if (activeHole>=0) { holes[activeHole].classList.remove('active','whacked'); }
+            document.getElementById('startBtn').textContent = '🔨 开始游戏';
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endCombo').textContent = 'x' + maxCombo;
+            const isNew = score > bestScore;
+            document.getElementById('newBest').style.display = isNew ? 'block' : 'none';
+            if (isNew) { localStorage.setItem('whack-best', score); document.getElementById('best').textContent = score; }
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        createBoard();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

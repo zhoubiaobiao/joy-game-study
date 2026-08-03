@@ -23,5 +23,10 @@ menu: main
 | 013 | 📦 推箱子 | [开始游戏](/joy-game-study/play/013-sokoban/) |
 | 014 | 🔪 水果忍者 | [开始游戏](/joy-game-study/play/014-fruit/) |
 | 015 | 🏰 塔防 | [开始游戏](/joy-game-study/play/015-td/) |
+| 016 | ⚡ 反应测试 | [开始游戏](/joy-game-study/play/016-reaction/) |
+| 017 | ⌨️ 打字游戏 | [开始游戏](/joy-game-study/play/017-typing/) |
+| 018 | 🏛️ 迷宫探索 | [开始游戏](/joy-game-study/play/018-maze/) |
+| 019 | 🔨 打地鼠 | [开始游戏](/joy-game-study/play/019-whack/) |
+| 020 | 💎 消消乐 | [开始游戏](/joy-game-study/play/020-match3/) |
 
-> 进度：15 / 100 🎉
+> 进度：20 / 100 🎉

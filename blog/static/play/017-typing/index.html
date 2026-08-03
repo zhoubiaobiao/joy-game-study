@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>017 - 打字游戏</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', monospace;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 500px; aspect-ratio: 3/4; }
+        canvas { width: 100%; height: 100%; border: 2px solid #333; background: #0a0a1a; border-radius: 6px; display: block; }
+
+        .input-row { display: flex; gap: 8px; margin-top: 6px; width: 100%; max-width: 500px; }
+        #wordInput {
+            flex: 1; padding: 12px 16px; border: 2px solid #444; background: #0f0f23;
+            color: #00d4ff; border-radius: 8px; font-size: 1.1em; font-family: 'Consolas', monospace;
+            outline: none; text-align: center; letter-spacing: 1px;
+        }
+        #wordInput:focus { border-color: #00d4ff; }
+        #wordInput.correct { border-color: #44dd66; color: #44dd66; }
+        #wordInput.wrong { border-color: #ff4444; color: #ff4444; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 6px; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ff5555; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>⌨️ 打字游戏 — #017</h1>
+
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>WPM：<span id="wpm">0</span></span>
+        <span>准确率：<span id="acc">100%</span></span>
+        <span>❤️ <span id="lives">5</span></span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+
+    <div class="input-row"><input type="text" id="wordInput" placeholder="在这里输入单词..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 输入单词后按空格提交 | 在单词落地前打出来</div>
+
+    <div class="overlay" id="loseOverlay">
+        <h2>💥 游戏结束</h2>
+        <p>得分：<strong id="loseScore">0</strong> | WPM：<strong id="loseWpm">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const input = document.getElementById('wordInput');
+        let W, H, words=[], particles=[], score, lives, typed, correct, totalChars, animId, gameRunning;
+        let spawnTimer=0, startTime=0;
+
+        const WORD_BANK = ['the','cat','dog','run','jump','code','game','play','type','fast','quick','happy','blue','red','sun','moon','star','fish','bird','tree','book','home','love','time','life','work','hand','mind','fire','water','earth','wind','rain','snow','gold','dark','light','open','shut','door','wall','road','path','song','ring','bell','ship','boat','wave','rock','hill','moon','star'];
+
+        function resize() {
+            const s = Math.min(canvas.parentElement.clientWidth, 500);
+            canvas.width = s; canvas.height = s * 1.333;
+            W = canvas.width; H = canvas.height;
+        }
+
+        function spawnWord() {
+            const w = WORD_BANK[Math.floor(Math.random()*WORD_BANK.length)];
+            words.push({
+                text: w, x: 30+Math.random()*(W-60), y: -20,
+                speed: 0.4+Math.random()*0.6, color: '#ddd',
+            });
+        }
+
+        function newGame() {
+            resize(); words=[]; particles=[];
+            score=0; lives=5; typed=0; correct=0; totalChars=0; gameRunning=true; spawnTimer=0; startTime=Date.now();
+            document.getElementById('score').textContent='0';
+            document.getElementById('wpm').textContent='0';
+            document.getElementById('acc').textContent='100%';
+            document.getElementById('lives').textContent='5';
+            document.getElementById('loseOverlay').style.display='none';
+            input.value=''; input.focus(); input.className='';
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            spawnTimer++;
+            const interval = Math.max(35, 100-(score/20));
+            if (spawnTimer >= interval) { spawnTimer=0; spawnWord(); if (Math.random()<0.35) spawnWord(); }
+
+            for (let i=words.length-1; i>=0; i--) {
+                const w = words[i];
+                w.y += w.speed + score*0.003;
+                if (w.y > H+10) {
+                    if (!w.destroyed) { lives--; document.getElementById('lives').textContent=lives; spawnParticles(w.x, w.y, '#ff4444', 8); if (lives<=0) endGame(); }
+                    words.splice(i,1);
+                }
+            }
+
+            for (let i=particles.length-1;i>=0;i--) { const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.1; p.life--; if(p.life<=0) particles.splice(i,1); }
+
+            // 更新 WPM
+            if (gameRunning) {
+                const elapsed = (Date.now()-startTime)/60000;
+                if (elapsed>0.05) document.getElementById('wpm').textContent = Math.round((correct/5)/Math.max(elapsed,0.01));
+            }
+        }
+
+        function spawnParticles(x,y,color,count) {
+            for(let i=0;i<count;i++) particles.push({x,y,vx:(Math.random()-0.5)*5,vy:(Math.random()-0.5)*5,color,life:12+Math.random()*10,r:1+Math.random()*3});
+        }
+
+        function endGame() {
+            gameRunning=false;
+            document.getElementById('loseScore').textContent=score;
+            document.getElementById('loseWpm').textContent=document.getElementById('wpm').textContent;
+            document.getElementById('loseOverlay').style.display='block';
+        }
+
+        function draw() {
+            ctx.clearRect(0,0,W,H);
+            ctx.fillStyle='#0a0a1a'; ctx.fillRect(0,0,W,H);
+
+            // 星点装饰
+            ctx.fillStyle='rgba(255,255,255,0.05)';
+            for(let x=10;x<W;x+=35) for(let y=10;y<H;y+=35) ctx.fillRect(x,y,1,1);
+
+            // 预警线
+            ctx.setLineDash([4,8]); ctx.strokeStyle='rgba(255,80,80,0.2)'; ctx.lineWidth=1;
+            ctx.beginPath(); ctx.moveTo(0,H-20); ctx.lineTo(W,H-20); ctx.stroke();
+            ctx.setLineDash([]);
+
+            for (const w of words) {
+                if (w.destroyed) continue;
+                const alpha = Math.max(0.4, 1-(w.y/H));
+                ctx.fillStyle = w.color+Math.floor(alpha*255).toString(16).padStart(2,'0');
+                ctx.font = 'bold '+Math.floor(16+alpha*8)+'px "Consolas", monospace';
+                ctx.textAlign='center';
+                // 光晕
+                ctx.shadowColor = 'rgba(0,212,255,'+(alpha*0.5)+')';
+                ctx.shadowBlur = 8;
+                ctx.fillText(w.text, w.x, w.y);
+                ctx.shadowBlur = 0;
+                ctx.textAlign='start';
+            }
+
+            for (const p of particles) {
+                const a = p.life/22;
+                ctx.fillStyle = p.color+Math.floor(a*255).toString(16).padStart(2,'0');
+                ctx.beginPath(); ctx.arc(p.x,p.y,p.r*a,0,Math.PI*2); ctx.fill();
+            }
+
+            // 分数
+            ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.font='bold 22px "Consolas", monospace'; ctx.textAlign='center';
+            ctx.fillText(score, W/2, 32); ctx.textAlign='start';
+        }
+
+        function loop() { update(); draw(); animId=requestAnimationFrame(loop); }
+
+        input.addEventListener('keydown', e => {
+            if (e.key !== ' ' && e.key !== 'Enter') return;
+            e.preventDefault();
+            if (!gameRunning) return;
+            const val = input.value.trim().toLowerCase();
+            if (!val) return;
+
+            typed++; totalChars += val.length;
+            let found = false;
+            for (let i=words.length-1; i>=0; i--) {
+                if (words[i].destroyed) continue;
+                if (words[i].text.toLowerCase() === val) {
+                    words[i].destroyed = true; found = true; correct++;
+                    score += val.length * 10;
+                    document.getElementById('score').textContent = score;
+                    spawnParticles(words[i].x, words[i].y, '#44dd66', 10);
+                    words.splice(i,1);
+                    input.className='correct';
+                    setTimeout(()=>input.className='',200);
+                    break;
+                }
+            }
+            if (!found) { input.className='wrong'; setTimeout(()=>input.className='',300); }
+            document.getElementById('acc').textContent = typed>0?Math.round(correct/typed*100)+'%':'100%';
+            input.value='';
+        });
+
+        document.getElementById('newBtn').addEventListener('click',()=>{newGame();input.focus();});
+        window.addEventListener('resize',()=>{resize();});
+        newGame(); loop();
+    </script>
+<script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
