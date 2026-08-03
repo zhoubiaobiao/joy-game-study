@@ -144,17 +144,6 @@ function buildNavJs() {
 
 // ─── 2. 生成 _index.md ──────────────────────────────────
 function buildIndex() {
-  // 将游戏分成3列，计算每列数量
-  const COLS = 3;
-  const perCol = Math.ceil(games.length / COLS);
-  const cols = [[], [], []];
-  games.forEach((g, i) => {
-    const num = g.id.split('-')[0];
-    cols[Math.floor(i / perCol)].push(
-      `<a href="/joy-game-study/play/${g.id}/" style="color:#ccc;text-decoration:none;line-height:2.1;">${num} ${g.name}</a><br>`
-    );
-  });
-
   const lines = [
     '---',
     'title: "游戏列表"',
@@ -164,18 +153,15 @@ function buildIndex() {
     '',
     '## 🎮 已完成游戏',
     '',
-    '<table style="width:100%;border:none;font-size:0.92em;"><tr style="vertical-align:top;">',
+    '| # | 游戏 | 试玩 |',
+    '|---|------|------|',
   ];
 
-  for (const col of cols) {
-    lines.push('<td style="border:none;padding:0 6px 0 0;width:33.3%;">');
-    for (const item of col) {
-      lines.push(item);
-    }
-    lines.push('</td>');
+  for (const g of games) {
+    const num = g.id.split('-')[0];
+    lines.push(`| ${num} | ${g.name} | [开始游戏](/joy-game-study/play/${g.id}/) |`);
   }
 
-  lines.push('</tr></table>');
   lines.push('');
   lines.push(`> 进度：${games.length} / 100 🎉`);
 
