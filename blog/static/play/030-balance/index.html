@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>030 - 平衡球</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { position: relative; width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay.lose h2 { color: #ff5555; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎪 平衡球 — #030</h1>
+    <div class="top-bar">
+        <span>关卡：<span id="level">1</span></span>
+        <span>时间：<span id="timer">00:00</span></span>
+        <span>死亡：<span id="deaths">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 重来本关</button>
+    </div>
+    <div class="info">💡 方向键/WASD 倾斜平台 | 手机倾斜或滑动 | 把球滚到绿色洞口</div>
+    <div class="overlay win" id="winOverlay">
+        <h2>🎉 到达终点！</h2>
+        <p>用时：<strong id="winTime">0</strong> | 死亡：<strong id="winDeaths">0</strong></p>
+        <button onclick="nextLevel()" id="nextLevelBtn">▶ 下一关</button>
+        <button onclick="resetLevel()">🔄 重来</button>
+    </div>
+    <div class="overlay lose" id="loseOverlay">
+        <h2>💥 掉出平台！</h2>
+        <p>球从边缘掉下去了...</p>
+        <button onclick="resetLevel()">🔄 重来</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        let ball, goal, walls, holes, tiltX, tiltY, currentLevel, timerSec, timerInterval, deaths, win;
+        const BALL_R = 8, MAX_TILT = 0.6;
+
+        const LEVELS = [
+            { // Level 1: Simple straight
+                walls: [], holes: [], goal: { x: 0.85, y: 0.5 }, start: { x: 0.1, y: 0.5 }
+            },
+            { // Level 2: Basic walls
+                walls: [
+                    { x: 0.3, y: 0.3, w: 0.02, h: 0.4 },
+                    { x: 0.55, y: 0.0, w: 0.02, h: 0.35 },
+                    { x: 0.55, y: 0.65, w: 0.02, h: 0.35 },
+                ], holes: [], goal: { x: 0.85, y: 0.5 }, start: { x: 0.1, y: 0.5 }
+            },
+            { // Level 3: Zigzag
+                walls: [
+                    { x: 0.2, y: 0.0, w: 0.03, h: 0.7 },
+                    { x: 0.4, y: 0.3, w: 0.03, h: 0.7 },
+                    { x: 0.6, y: 0.0, w: 0.03, h: 0.7 },
+                    { x: 0.8, y: 0.3, w: 0.03, h: 0.7 },
+                ], holes: [], goal: { x: 0.9, y: 0.15 }, start: { x: 0.05, y: 0.85 }
+            },
+            { // Level 4: With holes
+                walls: [
+                    { x: 0.35, y: 0.2, w: 0.03, h: 0.6 },
+                ],
+                holes: [
+                    { x: 0.5, y: 0.3, r: 25 },
+                    { x: 0.7, y: 0.6, r: 22 },
+                ],
+                goal: { x: 0.85, y: 0.2 }, start: { x: 0.08, y: 0.5 }
+            },
+            { // Level 5: Challenge
+                walls: [
+                    { x: 0.25, y: 0.0, w: 0.02, h: 0.5 },
+                    { x: 0.25, y: 0.7, w: 0.02, h: 0.3 },
+                    { x: 0.5, y: 0.2, w: 0.02, h: 0.6 },
+                    { x: 0.75, y: 0.0, w: 0.02, h: 0.45 },
+                    { x: 0.75, y: 0.6, w: 0.02, h: 0.4 },
+                ],
+                holes: [
+                    { x: 0.4, y: 0.15, r: 18 },
+                    { x: 0.62, y: 0.75, r: 20 },
+                    { x: 0.88, y: 0.35, r: 16 },
+                ],
+                goal: { x: 0.92, y: 0.8 }, start: { x: 0.06, y: 0.5 }
+            },
+        ];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 0.75);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function loadLevel(idx) {
+            currentLevel = idx;
+            const lv = LEVELS[idx];
+            resize();
+            ball = { x: lv.start.x * W, y: lv.start.y * H, vx: 0, vy: 0 };
+            goal = { x: lv.goal.x * W, y: lv.goal.y * H, r: 14 };
+            walls = lv.walls.map(w => ({ x: w.x * W, y: w.y * H, w: w.w * W, h: w.h * H }));
+            holes = lv.holes.map(h => ({ x: h.x * W, y: h.y * H, r: h.r }));
+            tiltX = 0; tiltY = 0; timerSec = 0; deaths = 0; win = false;
+            clearInterval(timerInterval); timerInterval = null;
+            document.getElementById('level').textContent = idx + 1;
+            document.getElementById('timer').textContent = '00:00';
+            document.getElementById('deaths').textContent = '0';
+            document.getElementById('winOverlay').style.display = 'none';
+            document.getElementById('loseOverlay').style.display = 'none';
+        }
+
+        function startTimer() {
+            if (timerInterval) return;
+            timerInterval = setInterval(() => { timerSec++; document.getElementById('timer').textContent = formatTime(timerSec); }, 1000);
+        }
+
+        function formatTime(s) { return Math.floor(s/60).toString().padStart(2,'0')+':'+(s%60).toString().padStart(2,'0'); }
+
+        function resetLevel() { loadLevel(currentLevel); }
+
+        function nextLevel() {
+            if (currentLevel < LEVELS.length - 1) loadLevel(currentLevel + 1);
+        }
+
+        function update() {
+            if (win) return;
+            startTimer();
+
+            // Apply tilt as acceleration
+            const ax = tiltX * 0.25, ay = tiltY * 0.25;
+            ball.vx += ax; ball.vy += ay;
+            ball.vx *= 0.985; ball.vy *= 0.985; // friction
+            ball.x += ball.vx; ball.y += ball.vy;
+
+            // Wall collisions
+            for (const w of walls) {
+                if (ball.x + BALL_R > w.x && ball.x - BALL_R < w.x + w.w &&
+                    ball.y + BALL_R > w.y && ball.y - BALL_R < w.y + w.h) {
+                    // Push out
+                    const overlapL = (ball.x + BALL_R) - w.x;
+                    const overlapR = (w.x + w.w) - (ball.x - BALL_R);
+                    const overlapT = (ball.y + BALL_R) - w.y;
+                    const overlapB = (w.y + w.h) - (ball.y - BALL_R);
+                    const minO = Math.min(overlapL, overlapR, overlapT, overlapB);
+                    if (minO === overlapL) { ball.x = w.x - BALL_R; ball.vx = -ball.vx * 0.5; }
+                    else if (minO === overlapR) { ball.x = w.x + w.w + BALL_R; ball.vx = -ball.vx * 0.5; }
+                    else if (minO === overlapT) { ball.y = w.y - BALL_R; ball.vy = -ball.vy * 0.5; }
+                    else { ball.y = w.y + w.h + BALL_R; ball.vy = -ball.vy * 0.5; }
+                }
+            }
+
+            // Hole collisions (danger)
+            for (const h of holes) {
+                const dx = ball.x - h.x, dy = ball.y - h.y;
+                if (Math.sqrt(dx*dx+dy*dy) < h.r) {
+                    deaths++;
+                    document.getElementById('deaths').textContent = deaths;
+                    document.getElementById('loseOverlay').style.display = 'block';
+                    return;
+                }
+            }
+
+            // Goal check
+            const gdx = ball.x - goal.x, gdy = ball.y - goal.y;
+            if (Math.sqrt(gdx*gdx+gdy*gdy) < goal.r) {
+                win = true; clearInterval(timerInterval);
+                document.getElementById('winTime').textContent = formatTime(timerSec);
+                document.getElementById('winDeaths').textContent = deaths;
+                document.getElementById('nextLevelBtn').style.display = currentLevel < LEVELS.length - 1 ? 'inline-block' : 'none';
+                document.getElementById('winOverlay').style.display = 'block';
+            }
+
+            // Fall off edge
+            if (ball.x < -BALL_R || ball.x > W + BALL_R || ball.y < -BALL_R || ball.y > H + BALL_R) {
+                deaths++;
+                document.getElementById('deaths').textContent = deaths;
+                document.getElementById('loseOverlay').style.display = 'block';
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Board background
+            ctx.fillStyle = '#2d5a27'; ctx.fillRect(0, 0, W, H);
+            // Grid lines
+            ctx.strokeStyle = '#3a6e33'; ctx.lineWidth = 0.5;
+            for (let x = 0; x < W; x += W / 10) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+            for (let y = 0; y < H; y += H / 10) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+            // Border
+            ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 6; ctx.strokeRect(3, 3, W - 6, H - 6);
+
+            // Walls
+            ctx.fillStyle = '#555';
+            for (const w of walls) {
+                ctx.fillRect(w.x, w.y, w.w, w.h);
+                ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                ctx.fillRect(w.x, w.y, w.w, 3);
+                ctx.fillStyle = '#555';
+            }
+
+            // Holes
+            for (const h of holes) {
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.arc(h.x, h.y, h.r * 0.85, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Goal
+            ctx.fillStyle = '#44dd44';
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, goal.r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#22aa22';
+            ctx.beginPath(); ctx.arc(goal.x, goal.y, goal.r * 0.7, 0, Math.PI * 2); ctx.fill();
+            // Goal arrow
+            const arrowPulse = Math.sin(Date.now() / 300) * 4;
+            ctx.fillStyle = '#fff'; ctx.font = `${goal.r}px "Segoe UI Emoji"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('🏁', goal.x, goal.y - goal.r - 8 - arrowPulse);
+            ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+            // Ball shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath(); ctx.arc(ball.x + 2, ball.y + 2, BALL_R, 0, Math.PI * 2); ctx.fill();
+
+            // Ball
+            const ballGrad = ctx.createRadialGradient(ball.x - 2, ball.y - 2, BALL_R * 0.1, ball.x, ball.y, BALL_R);
+            ballGrad.addColorStop(0, '#fff');
+            ballGrad.addColorStop(0.4, '#ff8844');
+            ballGrad.addColorStop(1, '#cc4400');
+            ctx.fillStyle = ballGrad;
+            ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2); ctx.fill();
+
+            // Tilt indicators
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(`倾斜: X:${tiltX.toFixed(2)} Y:${tiltY.toFixed(2)}`, W - 10, H - 10);
+            ctx.textAlign = 'start';
+        }
+
+        function loop() {
+            update(); draw();
+            if (!win && document.getElementById('loseOverlay').style.display === 'none') requestAnimationFrame(loop);
+        }
+
+        // Keyboard tilt
+        const keys = {};
+        document.addEventListener('keydown', e => { keys[e.key] = true; });
+        document.addEventListener('keyup', e => { keys[e.key] = false; });
+        function readTilt() {
+            tiltX = 0; tiltY = 0;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) tiltX = -MAX_TILT;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) tiltX = MAX_TILT;
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) tiltY = -MAX_TILT;
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) tiltY = MAX_TILT;
+        }
+
+        // Touch/mouse tilt via canvas drag
+        let touchCenter = null;
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            touchCenter = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!touchCenter) return;
+            const dx = e.touches[0].clientX - touchCenter.x;
+            const dy = e.touches[0].clientY - touchCenter.y;
+            tiltX = Math.max(-MAX_TILT, Math.min(MAX_TILT, dx / 80));
+            tiltY = Math.max(-MAX_TILT, Math.min(MAX_TILT, dy / 80));
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); tiltX = 0; tiltY = 0; touchCenter = null; });
+        canvas.addEventListener('mousemove', e => {
+            if (e.buttons !== 1) return;
+            if (!touchCenter) { touchCenter = { x: e.clientX, y: e.clientY }; return; }
+            tiltX = Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.clientX - touchCenter.x) / 80));
+            tiltY = Math.max(-MAX_TILT, Math.min(MAX_TILT, (e.clientY - touchCenter.y) / 80));
+        });
+        canvas.addEventListener('mouseup', () => { tiltX = 0; tiltY = 0; touchCenter = null; });
+
+        document.getElementById('newBtn').addEventListener('click', resetLevel);
+        window.addEventListener('resize', () => { resize(); });
+
+        loadLevel(0);
+
+        // Main loop with tilt reading
+        function gameLoop() {
+            readTilt();
+            update();
+            draw();
+            if (document.getElementById('loseOverlay').style.display === 'none' && !win) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        gameLoop();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

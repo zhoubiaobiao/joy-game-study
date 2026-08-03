@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>026 - 钓鱼大师</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { position: relative; width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; }
+        .btn-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎣 钓鱼大师 — #026</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>鱼类：<span id="fishCount">0</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 点击水面扔竿 | 鱼漂下沉时点击收线 | 看准时机！</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🎣 时间到！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 钓到：<strong id="endFish">0</strong>条</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        let score, fishCaught, bestScore, timeLeft, timerInterval, gameOver;
+        let bobber, fishTarget, state; // state: 'idle' | 'waiting' | 'biting' | 'hooked' | 'reeling'
+        let biteTime, biteWindow, particles, lineOut;
+
+        const FISH_TYPES = [
+            { name: '🐟 小鱼', color: '#88ccff', size: 15, points: 10, speed: 0.6, weight: 1 },
+            { name: '🐠 热带鱼', color: '#ff8844', size: 18, points: 25, speed: 0.9, weight: 2 },
+            { name: '🐡 河豚', color: '#ffcc00', size: 22, points: 40, speed: 0.5, weight: 3 },
+            { name: '🦈 鲨鱼', color: '#4488cc', size: 30, points: 80, speed: 1.2, weight: 5 },
+            { name: '🐋 鲸鱼', color: '#4466aa', size: 40, points: 150, speed: 0.3, weight: 10 },
+        ];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.2);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            clearInterval(timerInterval);
+            resize();
+            score = 0; fishCaught = 0; gameOver = false; timeLeft = 60;
+            bestScore = parseInt(localStorage.getItem('fishing-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('fishCount').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            bobber = { x: W / 2, y: H * 0.25, vy: 0 };
+            particles = []; lineOut = 0;
+            state = 'idle'; fishTarget = null;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) { endGame(); }
+            }, 1000);
+            loop();
+        }
+
+        function castLine() {
+            if (state !== 'idle' || gameOver) return;
+            bobber.x = W / 2 + (Math.random() - 0.5) * W * 0.5;
+            bobber.y = H * 0.22;
+            lineOut = 1;
+            state = 'waiting';
+            // Random wait before bite
+            const wait = 1500 + Math.random() * 4000;
+            setTimeout(() => {
+                if (state === 'waiting' && !gameOver) {
+                    state = 'biting';
+                    bobber.vy = -1;
+                    // Choose random fish
+                    const weights = [0.3, 0.3, 0.2, 0.15, 0.05];
+                    const r = Math.random();
+                    let acc = 0, fishIdx = 0;
+                    for (let i = 0; i < weights.length; i++) { acc += weights[i]; if (r <= acc) { fishIdx = i; break; } }
+                    fishTarget = { ...FISH_TYPES[fishIdx], x: bobber.x, y: bobber.y + 40 };
+                    biteWindow = 600 + Math.random() * 800; // ms to react
+                    biteTime = Date.now();
+                }
+            }, wait);
+        }
+
+        function reel() {
+            if (gameOver) return;
+            if (state === 'biting') {
+                const elapsed = Date.now() - biteTime;
+                if (elapsed <= biteWindow) {
+                    // Success!
+                    const bonus = elapsed < biteWindow * 0.4 ? 2 : 1;
+                    const pts = fishTarget.points * bonus;
+                    score += pts;
+                    fishCaught++;
+                    state = 'hooked';
+                    // Splash particles
+                    for (let i = 0; i < 12; i++) {
+                        particles.push({ x: bobber.x, y: bobber.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6 - 2, life: 20, color: '#88ccff' });
+                    }
+                    // Show caught fish
+                    setTimeout(() => {
+                        state = 'idle'; bobber.y = H * 0.24; lineOut = 0; bobber.vy = 0; fishTarget = null;
+                    }, 1000);
+                } else {
+                    // Too late
+                    missFish();
+                }
+            } else if (state === 'idle') {
+                castLine();
+            } else {
+                missFish();
+            }
+            updateUI();
+        }
+
+        function missFish() {
+            state = 'idle'; bobber.y = H * 0.24; lineOut = 0; bobber.vy = 0; fishTarget = null;
+            for (let i = 0; i < 4; i++) {
+                particles.push({ x: bobber.x, y: bobber.y, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 3, life: 10, color: '#888' });
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('fishCount').textContent = fishCaught;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('fishing-best', bestScore); document.getElementById('best').textContent = bestScore; }
+        }
+
+        function endGame() {
+            gameOver = true; clearInterval(timerInterval);
+            updateUI();
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endFish').textContent = fishCaught;
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#1a3a5c'); sky.addColorStop(0.3, '#87CEEB'); sky.addColorStop(0.5, '#2196F3'); sky.addColorStop(1, '#0d47a1');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Sun
+            ctx.fillStyle = '#ffd70033'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.08, W * 0.12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.08, W * 0.06, 0, Math.PI * 2); ctx.fill();
+
+            // Water surface
+            ctx.fillStyle = '#1565C0'; ctx.fillRect(0, H * 0.35, W, H * 0.65);
+            // Water waves
+            ctx.fillStyle = '#1976D2';
+            for (let i = 0; i < 12; i++) {
+                const wx = (i * W / 10 + Date.now() * 0.02) % W;
+                ctx.beginPath(); ctx.ellipse(wx, H * 0.35, W * 0.12, 6, 0, 0, Math.PI); ctx.fill();
+            }
+            ctx.fillStyle = '#0D47A1'; ctx.fillRect(0, H * 0.6, W, H * 0.4);
+
+            // Fishing line
+            if (lineOut > 0) {
+                ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(bobber.x, bobber.y); ctx.stroke();
+            }
+
+            // Bobber
+            const by = bobber.y + Math.sin(Date.now() * 3) * (state === 'biting' ? 3 : 1);
+            ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.arc(bobber.x, by, 8, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bobber.x, by - 4, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.arc(bobber.x - 2, by - 3, 2, 0, Math.PI * 2); ctx.fill();
+
+            // Fish underwater
+            if (fishTarget && (state === 'biting' || state === 'hooked')) {
+                const fy = fishTarget.y + Math.sin(Date.now() * fishTarget.speed * 5) * 8;
+                ctx.fillStyle = fishTarget.color;
+                ctx.beginPath(); ctx.ellipse(fishTarget.x, fy, fishTarget.size, fishTarget.size * 0.6, -0.1, 0, Math.PI * 2); ctx.fill();
+                // Tail
+                ctx.beginPath(); ctx.moveTo(fishTarget.x - fishTarget.size, fy);
+                ctx.lineTo(fishTarget.x - fishTarget.size * 1.8, fy - fishTarget.size * 0.5);
+                ctx.lineTo(fishTarget.x - fishTarget.size * 1.5, fy + fishTarget.size * 0.4);
+                ctx.fill();
+                // Eye
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(fishTarget.x + fishTarget.size * 0.35, fy - 3, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(fishTarget.x + fishTarget.size * 0.4, fy - 3, 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Biting indicator
+            if (state === 'biting') {
+                const remaining = Math.max(0, biteWindow - (Date.now() - biteTime));
+                const ratio = remaining / biteWindow;
+                ctx.fillStyle = ratio > 0.3 ? '#ffd700' : '#ff4444';
+                ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('🎣 快收线！', bobber.x, bobber.y - 24);
+                ctx.textAlign = 'start';
+                // Progress bar
+                ctx.fillStyle = '#333'; ctx.fillRect(W / 2 - 30, H * 0.12, 60, 6);
+                ctx.fillStyle = ratio > 0.3 ? '#44ff44' : '#ff4444';
+                ctx.fillRect(W / 2 - 30, H * 0.12, 60 * ratio, 6);
+            } else if (state === 'hooked') {
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('✅ 钓到了！+' + fishTarget.points + '分', bobber.x, bobber.y - 20);
+                ctx.textAlign = 'start';
+            }
+
+            // Particles
+            for (let p of particles) { ctx.fillStyle = `rgba(${p.color === '#88ccff' ? '136,204,255' : '136,136,136'},${p.life / 20})`; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill(); }
+
+            // Timer
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('⏱ ' + timeLeft + 's', W - 10, H - 10);
+            ctx.textAlign = 'start';
+
+            // State hint
+            if (state === 'idle') {
+                ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '14px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('点击水面扔竿钓鱼', W / 2, H * 0.55);
+                ctx.textAlign = 'start';
+            } else if (state === 'waiting') {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '13px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('等待鱼儿上钩...', W / 2, H * 0.55);
+                ctx.textAlign = 'start';
+            }
+        }
+
+        function update() {
+            for (let p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function loop() { update(); draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', e => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+            const scaleX = W / rect.width, scaleY = H / rect.height;
+            const x = cx * scaleX, y = cy * scaleY;
+            if (y > H * 0.3 && state === 'idle') { bobber.x = x; castLine(); }
+            else if (state === 'biting' || state === 'waiting') reel();
+            else if (state === 'idle') castLine();
+        });
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.touches[0].clientX - rect.left, cy = e.touches[0].clientY - rect.top;
+            const scaleX = W / rect.width, scaleY = H / rect.height;
+            const x = cx * scaleX, y = cy * scaleY;
+            if (y > H * 0.3 && state === 'idle') { bobber.x = x; castLine(); }
+            else if (state === 'biting' || state === 'waiting') reel();
+            else if (state === 'idle') castLine();
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

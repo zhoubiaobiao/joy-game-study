@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>029 - 连连看</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 6px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .grid-wrap { width: 100%; max-width: 400px; }
+        .grid {
+            display: grid; gap: 3px; width: 100%; padding: 6px;
+            background: #0f0f23; border: 2px solid #333; border-radius: 8px;
+        }
+        .cell {
+            aspect-ratio: 1; background: #1a2840; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: clamp(1em, 4vw, 1.6em); cursor: pointer; transition: all 0.12s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .cell.empty { background: transparent; cursor: default; }
+        .cell.selected { background: #00d4ff44; border: 2px solid #00d4ff; transform: scale(1.08); }
+        .cell.hint { animation: hintPulse 0.5s ease-in-out 3; }
+        @keyframes hintPulse { 0%,100% { background: #1a2840; } 50% { background: #ffd70044; } }
+        .cell.matched { animation: matchPop 0.3s ease-out; }
+        @keyframes matchPop { 0% { transform: scale(1); } 50% { transform: scale(1.3); opacity: 0.5; } 100% { transform: scale(0); opacity: 0; } }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧲 连连看 — #029</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>剩余：<span id="left">0</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="grid-wrap">
+        <div class="grid" id="grid"></div>
+    </div>
+    <div class="btn-row">
+        <button class="btn" id="hintBtn">💡 提示</button>
+        <button class="btn" id="shuffleBtn">🔀 洗牌</button>
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 点击两个相同图标 | 连接路径最多拐2个弯 | 全部消除即通关</div>
+    <div class="overlay" id="winOverlay">
+        <h2>🎉 全部消除！</h2>
+        <p>得分：<strong id="winScore">0</strong></p>
+        <button onclick="newGame()">🔄 新游戏</button>
+    </div>
+    <script>
+        const ROWS = 6, COLS = 8;
+        const ICONS = ['🍎','🍊','🍋','🍇','🍓','🍒','🥝','🍑','🌸','🌻','🍀','🌙','⭐','🔥','💎','🎵','🐶','🐱','🐰','🦊','🐼','🐨','🐸','🦋'];
+        let grid, score, bestScore, selected, totalPairs;
+        const GRID_ROWS = ROWS + 2, GRID_COLS = COLS + 2; // +2 for border padding
+
+        function newGame() {
+            score = 0; selected = null;
+            bestScore = parseInt(localStorage.getItem('link-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('winOverlay').style.display = 'none';
+            generateBoard();
+            render();
+        }
+
+        function generateBoard() {
+            const numIcons = (ROWS * COLS) / 2;
+            const icons = [];
+            // Pick random icons
+            const shuffled = [...ICONS].sort(() => Math.random() - 0.5);
+            for (let i = 0; i < numIcons; i++) icons.push(shuffled[i % shuffled.length], shuffled[i % shuffled.length]);
+
+            // Shuffle and place
+            const shuffledPairs = icons.sort(() => Math.random() - 0.5);
+
+            // Grid with border of 0 (empty) around
+            grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(0));
+            let idx = 0;
+            for (let r = 1; r <= ROWS; r++) {
+                for (let c = 1; c <= COLS; c++) {
+                    grid[r][c] = shuffledPairs[idx++];
+                }
+            }
+            totalPairs = numIcons;
+            document.getElementById('left').textContent = totalPairs;
+        }
+
+        function canConnect(r1, c1, r2, c2) {
+            if (grid[r1][c1] !== grid[r2][c2] || grid[r1][c1] === 0) return null;
+
+            // Check direct line (0 turns)
+            if (checkLine(r1, c1, r2, c2)) return [{ r: r1, c: c1 }, { r: r2, c: c2 }];
+
+            // Check 1 turn
+            // Via (r1, c2)
+            if (grid[r1][c2] === 0 && checkLine(r1, c1, r1, c2) && checkLine(r1, c2, r2, c2))
+                return [{ r: r1, c: c1 }, { r: r1, c: c2 }, { r: r2, c: c2 }];
+            // Via (r2, c1)
+            if (grid[r2][c1] === 0 && checkLine(r1, c1, r2, c1) && checkLine(r2, c1, r2, c2))
+                return [{ r: r1, c: c1 }, { r: r2, c: c1 }, { r: r2, c: c2 }];
+
+            // Check 2 turns
+            for (let r = 0; r < GRID_ROWS; r++) {
+                if (grid[r][c1] === 0 && grid[r][c2] === 0 &&
+                    checkLine(r1, c1, r, c1) && checkLine(r, c1, r, c2) && checkLine(r, c2, r2, c2))
+                    return [{ r: r1, c: c1 }, { r, c: c1 }, { r, c: c2 }, { r: r2, c: c2 }];
+            }
+            for (let c = 0; c < GRID_COLS; c++) {
+                if (grid[r1][c] === 0 && grid[r2][c] === 0 &&
+                    checkLine(r1, c1, r1, c) && checkLine(r1, c, r2, c) && checkLine(r2, c, r2, c2))
+                    return [{ r: r1, c: c1 }, { r: r1, c }, { r: r2, c }, { r: r2, c: c2 }];
+            }
+
+            return null;
+        }
+
+        function checkLine(r1, c1, r2, c2) {
+            if (r1 === r2) {
+                const minC = Math.min(c1, c2), maxC = Math.max(c1, c2);
+                for (let c = minC; c <= maxC; c++) {
+                    if (grid[r1][c] !== 0 && !(r1 === r2 && c === c1) && !(r1 === r2 && c === c2) &&
+                        !(r1 === r2 && c === Math.min(c1, c2)) && !(r1 === r2 && c === Math.max(c1, c2)))
+                        return false;
+                    if (grid[r1][c] !== 0 && c !== c1 && c !== c2) return false;
+                }
+                return true;
+            }
+            if (c1 === c2) {
+                const minR = Math.min(r1, r2), maxR = Math.max(r1, r2);
+                for (let r = minR; r <= maxR; r++) {
+                    if (grid[r][c1] !== 0 && r !== r1 && r !== r2) return false;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        function findHint() {
+            const cells = [];
+            for (let r = 1; r <= ROWS; r++) for (let c = 1; c <= COLS; c++) if (grid[r][c] !== 0) cells.push({ r, c, icon: grid[r][c] });
+            for (let i = 0; i < cells.length; i++) {
+                for (let j = i + 1; j < cells.length; j++) {
+                    if (cells[i].icon === cells[j].icon && canConnect(cells[i].r, cells[i].c, cells[j].r, cells[j].c)) {
+                        return [cells[i], cells[j]];
+                    }
+                }
+            }
+            return null;
+        }
+
+        function shuffle() {
+            const icons = [];
+            for (let r = 1; r <= ROWS; r++) for (let c = 1; c <= COLS; c++) if (grid[r][c] !== 0) icons.push(grid[r][c]);
+            icons.sort(() => Math.random() - 0.5);
+            let idx = 0;
+            for (let r = 1; r <= ROWS; r++) for (let c = 1; c <= COLS; c++) if (grid[r][c] !== 0) { grid[r][c] = icons[idx++]; }
+            selected = null; render();
+        }
+
+        function cellClick(r, c) {
+            if (grid[r][c] === 0) return;
+            if (!selected) { selected = { r, c }; render(); return; }
+            if (selected.r === r && selected.c === c) { selected = null; render(); return; }
+
+            const path = canConnect(selected.r, selected.c, r, c);
+            if (path) {
+                score += 10;
+                totalPairs--;
+                document.getElementById('score').textContent = score;
+                document.getElementById('left').textContent = totalPairs;
+                grid[selected.r][selected.c] = 0;
+                grid[r][c] = 0;
+                selected = null;
+                render();
+                if (score > bestScore) { bestScore = score; localStorage.setItem('link-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                if (totalPairs === 0) {
+                    document.getElementById('winScore').textContent = score;
+                    document.getElementById('winOverlay').style.display = 'block';
+                }
+            } else {
+                selected = { r, c };
+                render();
+            }
+        }
+
+        function render() {
+            const gridEl = document.getElementById('grid');
+            gridEl.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+            gridEl.innerHTML = '';
+            for (let r = 1; r <= ROWS; r++) {
+                for (let c = 1; c <= COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (grid[r][c] === 0) cell.classList.add('empty');
+                    else { cell.textContent = grid[r][c]; }
+                    if (selected && selected.r === r && selected.c === c) cell.classList.add('selected');
+                    if (grid[r][c] !== 0) {
+                        cell.addEventListener('click', () => cellClick(r, c));
+                    }
+                    gridEl.appendChild(cell);
+                }
+            }
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        document.getElementById('shuffleBtn').addEventListener('click', shuffle);
+        document.getElementById('hintBtn').addEventListener('click', () => {
+            const hint = findHint();
+            if (hint) {
+                document.querySelectorAll('.cell').forEach(el => el.classList.remove('hint'));
+                const cells = document.querySelectorAll('.cell');
+                const idx1 = (hint[0].r - 1) * COLS + (hint[0].c - 1);
+                const idx2 = (hint[1].r - 1) * COLS + (hint[1].c - 1);
+                if (cells[idx1]) cells[idx1].classList.add('hint');
+                if (cells[idx2]) cells[idx2].classList.add('hint');
+            } else {
+                shuffle();
+            }
+        });
+
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

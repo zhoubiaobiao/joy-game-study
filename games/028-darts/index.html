@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>028 - 飞镖</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { position: relative; width: 100%; max-width: 380px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 飞镖 — #028</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>回合：<span id="round">1</span>/10</span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 移动鼠标/手指瞄准 | 点击投掷 | 越靠近靶心得分越高</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🏆 游戏结束</h2>
+        <p>总得分：<strong id="endScore">0</strong> | 命中靶心：<strong id="bullseyes">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, cx, cy, boardR;
+        let score, round, maxRounds, bestScore, bullseyes, gameOver;
+        let aimX, aimY, darts, particles;
+        // Scoring rings (from center out): bullseye=50, bull=25, triple inner, single, triple outer, double, miss
+        const RINGS = [
+            { r: 0.06, color: '#ff0000', points: 50, name: '靶心' },
+            { r: 0.12, color: '#00ff00', points: 25, name: '内环' },
+            { r: 0.28, color: '#fff', points: null, name: '单倍' },
+            { r: 0.35, color: '#ff0000', points: null, name: '三倍' },
+            { r: 0.55, color: '#fff', points: null, name: '单倍' },
+            { r: 0.65, color: '#00ff00', points: null, name: '双倍' },
+            { r: 1.0, color: '#111', points: 0, name: '脱靶' },
+        ];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 380);
+            W = maxW; H = maxW;
+            canvas.width = W; canvas.height = H;
+            cx = W / 2; cy = H / 2; boardR = W * 0.42;
+        }
+
+        function newGame() {
+            resize();
+            score = 0; round = 1; maxRounds = 10; bullseyes = 0; gameOver = false;
+            bestScore = parseInt(localStorage.getItem('darts-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('round').textContent = '1/10';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            darts = []; particles = []; aimX = cx; aimY = cy;
+            loop();
+        }
+
+        function throwDart() {
+            if (gameOver || round > maxRounds) return;
+            // Calculate wobble: larger wobble further from center
+            const dx = aimX - cx, dy = aimY - cy;
+            const dist = Math.sqrt(dx * dx + dy * dy) / boardR;
+            const wobble = dist * 15 + Math.random() * 8;
+            const hitX = aimX + (Math.random() - 0.5) * wobble * 2;
+            const hitY = aimY + (Math.random() - 0.5) * wobble * 2;
+            const hdx = hitX - cx, hdy = hitY - cy;
+            const hdist = Math.sqrt(hdx * hdx + hdy * hdy) / boardR;
+
+            let pts = 0, name = '';
+            if (hdist <= 0.06) { pts = 50; name = '🎯 靶心！'; bullseyes++; }
+            else if (hdist <= 0.12) { pts = 25; name = '内环' }
+            else if (hdist <= 0.28) { pts = hdist <= 0.20 ? 15 : 8; name = '单倍区' }
+            else if (hdist <= 0.35) { pts = hdist <= 0.32 ? 24 : 16; name = '三倍区' }
+            else if (hdist <= 0.55) { pts = hdist <= 0.45 ? 10 : 5; name = '单倍区' }
+            else if (hdist <= 0.65) { pts = hdist <= 0.60 ? 2 : 1; name = '双倍区' }
+            else { pts = 0; name = '脱靶' }
+
+            score += pts;
+            darts.push({ x: hitX, y: hitY, pts });
+
+            // Particles on hit
+            for (let i = 0; i < 6; i++) {
+                particles.push({ x: hitX, y: hitY, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 15, color: pts >= 25 ? '#ffd700' : '#aaa' });
+            }
+
+            updateUI();
+            draw();
+            round++;
+            document.getElementById('round').textContent = round + '/10';
+
+            if (round > maxRounds) {
+                setTimeout(() => {
+                    gameOver = true;
+                    document.getElementById('endScore').textContent = score;
+                    document.getElementById('bullseyes').textContent = bullseyes;
+                    document.getElementById('endOverlay').style.display = 'block';
+                }, 800);
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('darts-best', bestScore); document.getElementById('best').textContent = bestScore; }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, W, H);
+
+            // Wall background
+            ctx.fillStyle = '#3e2723'; ctx.fillRect(0, 0, W, H);
+            // Cork texture
+            ctx.fillStyle = '#5d4037';
+            for (let i = 0; i < 60; i++) {
+                ctx.fillRect(Math.random() * W, Math.random() * H, Math.random() * 4 + 1, Math.random() * 4 + 1);
+            }
+
+            // Board background
+            ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(cx, cy, boardR, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#444'; ctx.lineWidth = 3; ctx.stroke();
+
+            // Draw rings
+            const ringDefs = [
+                { r: 1.0, color: '#000' },
+                { r: 0.65, color: '#0a0' }, // double ring (outer)
+                { r: 0.60, color: '#fff' },
+                { r: 0.55, color: '#fff' },
+                { r: 0.50, color: '#111' },
+                { r: 0.40, color: '#111' },
+                { r: 0.35, color: '#f00' }, // triple ring
+                { r: 0.30, color: '#fff' },
+                { r: 0.28, color: '#fff' },
+                { r: 0.22, color: '#111' },
+                { r: 0.12, color: '#0f0' }, // bull
+                { r: 0.06, color: '#f00' }, // bullseye
+            ];
+
+            for (const ring of ringDefs) {
+                ctx.fillStyle = ring.color;
+                ctx.beginPath(); ctx.arc(cx, cy, boardR * ring.r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Sector lines (20 sectors)
+            for (let i = 0; i < 20; i++) {
+                const angle = (i * Math.PI * 2) / 20 - Math.PI / 2;
+                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(angle) * boardR, cy + Math.sin(angle) * boardR); ctx.stroke();
+            }
+
+            // Numbers around edge
+            ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(boardR * 0.12)}px "Segoe UI"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const nums = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+            for (let i = 0; i < 20; i++) {
+                const angle = (i * Math.PI * 2) / 20 - Math.PI / 2;
+                const nx = cx + Math.cos(angle) * boardR * 0.82;
+                const ny = cy + Math.sin(angle) * boardR * 0.82;
+                ctx.fillText(nums[i], nx, ny);
+            }
+
+            // Bullseye text
+            ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(boardR*0.06)}px "Segoe UI"`;
+            ctx.fillText('50', cx, cy);
+
+            // Aim reticle
+            ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(aimX, aimY, 8, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(aimX - 14, aimY); ctx.lineTo(aimX - 4, aimY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(aimX + 4, aimY); ctx.lineTo(aimX + 14, aimY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(aimX, aimY - 14); ctx.lineTo(aimX, aimY - 4); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(aimX, aimY + 4); ctx.lineTo(aimX, aimY + 14); ctx.stroke();
+
+            // Darts
+            for (const d of darts) {
+                ctx.fillStyle = '#ccc'; ctx.beginPath(); ctx.arc(d.x, d.y, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x, d.y - 8); ctx.stroke();
+                // Points label
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 11px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText(d.pts, d.x, d.y - 12); ctx.textAlign = 'start';
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(${p.color === '#ffd700' ? '255,215,0' : '170,170,170'},${p.life / 15})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Score popup for newest dart
+            if (darts.length > 0 && darts[darts.length - 1].pts > 0) {
+                const ld = darts[darts.length - 1];
+                ctx.fillStyle = ld.pts >= 50 ? '#ffd700' : '#fff'; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
+                const label = ld.pts >= 50 ? '🎯 +' + ld.pts : '+' + ld.pts;
+                ctx.fillText(label, ld.x, ld.y - 20); ctx.textAlign = 'start';
+            }
+        }
+
+        function update() {
+            for (let p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function loop() { update(); draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        // Aim follows mouse
+        canvas.addEventListener('mousemove', e => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            aimX = (e.clientX - rect.left) * (W / rect.width);
+            aimY = (e.clientY - rect.top) * (H / rect.height);
+        });
+        canvas.addEventListener('click', () => throwDart());
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            aimX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            aimY = (e.touches[0].clientY - rect.top) * (H / rect.height);
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); throwDart(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

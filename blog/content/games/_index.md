@@ -33,5 +33,10 @@ menu: main
 | 023 | 💡 关灯谜题 | [开始游戏](/joy-game-study/play/023-lightsout/) |
 | 024 | 🧮 口算大挑战 | [开始游戏](/joy-game-study/play/024-math/) |
 | 025 | 🏃 跑酷 | [开始游戏](/joy-game-study/play/025-runner/) |
+| 026 | 🎣 钓鱼大师 | [开始游戏](/joy-game-study/play/026-fishing/) |
+| 027 | 🔫 泡泡射击 | [开始游戏](/joy-game-study/play/027-bubble/) |
+| 028 | 🎯 飞镖 | [开始游戏](/joy-game-study/play/028-darts/) |
+| 029 | 🧲 连连看 | [开始游戏](/joy-game-study/play/029-link/) |
+| 030 | 🎪 平衡球 | [开始游戏](/joy-game-study/play/030-balance/) |
 
-> 进度：25 / 100 🎉
+> 进度：30 / 100 🎉

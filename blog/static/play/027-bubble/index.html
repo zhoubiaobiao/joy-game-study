@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>027 - 泡泡射击</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { position: relative; width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #0a0a1a; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔫 泡泡射击 — #027</h1>
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>最佳：<span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 移动鼠标/手指瞄准 | 点击发射泡泡 | 3个同色相连即消除 | 泡泡落到底线游戏结束</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 游戏结束</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const COLS = 8, COLORS = ['#ff4444','#44aaff','#44dd44','#ffdd00','#ff8844','#cc66ff'];
+        let W, H, CELL, bubbles, shooter, nextBubble, score, bestScore, gameOver, aimAngle;
+        let ceilingRow = 0;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.3);
+            canvas.width = W; canvas.height = H;
+            CELL = Math.floor(W / COLS);
+        }
+
+        function newGame() {
+            resize();
+            score = 0; gameOver = false; ceilingRow = 0;
+            bestScore = parseInt(localStorage.getItem('bubble-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            bubbles = [];
+            // Initial rows
+            for (let r = 0; r < 4; r++) addRow();
+            shooter = { x: W / 2, y: H - CELL * 0.8 };
+            nextBubble = randomColor();
+            aimAngle = -Math.PI / 2;
+            loop();
+        }
+
+        function randomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
+
+        function addRow() {
+            for (let r = bubbles.length > 0 ? 0 : 0; r < 1; r++) {
+                bubbles.unshift([]);
+                const offset = (bubbles.length) % 2 === 0 ? 0 : CELL / 2;
+                const numCols = (bubbles.length) % 2 === 0 ? COLS : COLS - 1;
+                for (let c = 0; c < numCols; c++) {
+                    bubbles[0].push({ color: randomColor(), x: offset + c * CELL + CELL / 2, y: (bubbles.length - 1) * CELL * 0.87 + CELL / 2, r: CELL * 0.42 });
+                }
+            }
+        }
+
+        function getGridPos(x, y) {
+            for (let r = 0; r < bubbles.length; r++) {
+                for (let c = 0; c < bubbles[r].length; c++) {
+                    const b = bubbles[r][c];
+                    if (!b) continue;
+                    const dx = x - b.x, dy = y - b.y;
+                    if (Math.sqrt(dx * dx + dy * dy) < CELL * 0.44) return { r, c };
+                }
+            }
+            return null;
+        }
+
+        function getNeighbors(r, c) {
+            const neighbors = [];
+            const offsets = bubbles[r].length === COLS ? [[-1,-1],[-1,0],[0,-1],[0,1],[1,-1],[1,0]] : [[-1,0],[-1,1],[0,-1],[0,1],[1,0],[1,1]];
+            for (const [dr, dc] of offsets) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < bubbles.length && nc >= 0 && nc < bubbles[nr].length && bubbles[nr][nc]) {
+                    neighbors.push({ r: nr, c: nc });
+                }
+            }
+            return neighbors;
+        }
+
+        function findCluster(r, c, color) {
+            const visited = new Set();
+            const cluster = [];
+            const stack = [{ r, c }];
+            while (stack.length > 0) {
+                const { r: cr, c: cc } = stack.pop();
+                const key = cr + ',' + cc;
+                if (visited.has(key)) continue;
+                visited.add(key);
+                if (!bubbles[cr] || !bubbles[cr][cc] || bubbles[cr][cc].color !== color) continue;
+                cluster.push({ r: cr, c: cc });
+                for (const n of getNeighbors(cr, cc)) stack.push(n);
+            }
+            return cluster;
+        }
+
+        function findFloating() {
+            const connected = new Set();
+            // BFS from top row
+            const stack = [];
+            for (let c = 0; c < bubbles[0].length; c++) {
+                if (bubbles[0][c]) { stack.push({ r: 0, c }); connected.add('0,' + c); }
+            }
+            while (stack.length > 0) {
+                const { r, c } = stack.pop();
+                for (const n of getNeighbors(r, c)) {
+                    const key = n.r + ',' + n.c;
+                    if (!connected.has(key)) { connected.add(key); stack.push(n); }
+                }
+            }
+            const floating = [];
+            for (let r = 0; r < bubbles.length; r++) {
+                for (let c = 0; c < bubbles[r].length; c++) {
+                    if (bubbles[r][c] && !connected.has(r + ',' + c)) floating.push({ r, c });
+                }
+            }
+            return floating;
+        }
+
+        function shoot() {
+            if (gameOver) return;
+            const color = nextBubble;
+            // Simulate trajectory
+            let bx = shooter.x, by = shooter.y;
+            const vx = Math.cos(aimAngle) * 8, vy = Math.sin(aimAngle) * 8;
+            const steps = 200;
+            for (let i = 0; i < steps; i++) {
+                bx += vx; by += vy;
+                // Wall bounce
+                if (bx < CELL * 0.3 || bx > W - CELL * 0.3) { bx = Math.max(CELL * 0.3, Math.min(W - CELL * 0.3, bx)); }
+                // Hit top
+                if (by < CELL * 0.3) {
+                    placeBubble(bx, by, color); return;
+                }
+                // Check collision with existing bubbles
+                for (let r = 0; r < bubbles.length; r++) {
+                    for (let c = 0; c < bubbles[r].length; c++) {
+                        if (!bubbles[r][c]) continue;
+                        const dx = bx - bubbles[r][c].x, dy = by - bubbles[r][c].y;
+                        if (Math.sqrt(dx * dx + dy * dy) < CELL * 0.85) {
+                            // Place adjacent
+                            placeBubble(bx - vx * 2, by - vy * 2, color);
+                            return;
+                        }
+                    }
+                }
+            }
+            placeBubble(bx, by, color);
+        }
+
+        function placeBubble(x, y, color) {
+            // Find best grid position
+            let bestR = -1, bestC = -1, bestDist = Infinity;
+            const newRow = bubbles.length;
+            const offset = newRow % 2 === 0 ? 0 : CELL / 2;
+            const numCols = newRow % 2 === 0 ? COLS : COLS - 1;
+            // Check existing rows
+            for (let r = 0; r < bubbles.length; r++) {
+                for (let c = 0; c < bubbles[r].length; c++) {
+                    if (bubbles[r][c]) continue;
+                    const bx2 = (bubbles[r].length === COLS ? c * CELL + CELL / 2 : CELL / 2 + c * CELL + CELL / 2);
+                    const by2 = r * CELL * 0.87 + CELL / 2;
+                    const dist = Math.sqrt((x - bx2) ** 2 + (y - by2) ** 2);
+                    if (dist < bestDist && dist < CELL * 1.5) { bestDist = dist; bestR = r; bestC = c; }
+                }
+            }
+            if (bestR >= 0) {
+                bubbles[bestR][bestC] = { color, x: bubbles[bestR].length === COLS ? bestC * CELL + CELL / 2 : CELL / 2 + bestC * CELL + CELL / 2, y: bestR * CELL * 0.87 + CELL / 2, r: CELL * 0.42 };
+            } else {
+                // Add to new row at nearest position
+                if (!bubbles[newRow]) { bubbles.push([]); for (let c = 0; c < numCols; c++) bubbles[newRow].push(null); }
+                const nc = Math.min(numCols - 1, Math.max(0, Math.floor(x / CELL)));
+                if (!bubbles[newRow][nc]) {
+                    bubbles[newRow][nc] = { color, x: offset + nc * CELL + CELL / 2, y: newRow * CELL * 0.87 + CELL / 2, r: CELL * 0.42 };
+                }
+            }
+            processAfterPlace(color);
+        }
+
+        function processAfterPlace(color) {
+            // Find cluster of same color
+            let cluster = [];
+            for (let r = 0; r < bubbles.length; r++) {
+                for (let c = 0; c < bubbles[r].length; c++) {
+                    if (bubbles[r][c] && bubbles[r][c].color === color) {
+                        const cl = findCluster(r, c, color);
+                        if (cl.length > cluster.length) cluster = cl;
+                    }
+                }
+            }
+            if (cluster.length >= 3) {
+                score += cluster.length * 10;
+                for (const { r, c } of cluster) bubbles[r][c] = null;
+            }
+            // Remove floating bubbles
+            const floating = findFloating();
+            if (floating.length > 0) {
+                score += floating.length * 15;
+                for (const { r, c } of floating) bubbles[r][c] = null;
+            }
+            // Clean empty rows at bottom
+            while (bubbles.length > 0 && bubbles[bubbles.length - 1].every(b => !b)) bubbles.pop();
+            updateUI();
+            // Check game over
+            if (bubbles.length > 0) {
+                const lowest = bubbles[bubbles.length - 1];
+                const lowestY = (bubbles.length - 1) * CELL * 0.87 + CELL / 2;
+                if (lowestY > H - CELL * 1.5) gameOver = true;
+            }
+            if (gameOver) {
+                document.getElementById('endScore').textContent = score;
+                document.getElementById('endOverlay').style.display = 'block';
+            }
+            nextBubble = randomColor();
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('bubble-best', bestScore); document.getElementById('best').textContent = bestScore; }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
+
+            // Bubbles
+            for (let r = 0; r < bubbles.length; r++) {
+                for (let c = 0; c < bubbles[r].length; c++) {
+                    if (!bubbles[r][c]) continue;
+                    const b = bubbles[r][c];
+                    ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.35, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // Aim line
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+            ctx.beginPath(); ctx.moveTo(shooter.x, shooter.y);
+            ctx.lineTo(shooter.x + Math.cos(aimAngle) * 60, shooter.y + Math.sin(aimAngle) * 60);
+            ctx.stroke(); ctx.setLineDash([]);
+
+            // Shooter bubble
+            ctx.fillStyle = nextBubble; ctx.beginPath(); ctx.arc(shooter.x, shooter.y, CELL * 0.4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(shooter.x - CELL * 0.12, shooter.y - CELL * 0.12, CELL * 0.14, 0, Math.PI * 2); ctx.fill();
+
+            // Dead line
+            ctx.strokeStyle = '#ff444444'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, H - CELL * 1.3); ctx.lineTo(W, H - CELL * 1.3); ctx.stroke();
+
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#ff4444'; ctx.font = `bold ${CELL}px "Segoe UI"`; ctx.textAlign = 'center';
+                ctx.fillText('游戏结束', W / 2, H / 2); ctx.textAlign = 'start';
+            }
+        }
+
+        function loop() { draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            aimAngle = Math.atan2(e.clientY - rect.top - shooter.y * rect.height / H, e.clientX - rect.left - shooter.x * rect.width / W);
+        });
+        canvas.addEventListener('click', () => { if (!gameOver) shoot(); });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            aimAngle = Math.atan2(e.touches[0].clientY - rect.top - shooter.y * rect.height / H, e.touches[0].clientX - rect.left - shooter.x * rect.width / W);
+        });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); if (!gameOver) shoot(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
