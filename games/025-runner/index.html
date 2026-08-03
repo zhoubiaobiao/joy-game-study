@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>025 - 跑酷</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .canvas-wrap { width: 100%; max-width: 600px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏃 跑酷 — #025</h1>
+
+    <div class="top-bar">
+        <span>距离：<span id="score">0</span>m</span>
+        <span>最佳：<span id="best">0</span>m</span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+        <button class="btn" id="pauseBtn">⏯ 暂停</button>
+    </div>
+    <div class="info">💡 空格/点击/触屏 跳跃 | 可二段跳 | 躲避障碍物跑得更远</div>
+
+    <div class="overlay" id="endOverlay">
+        <h2>💥 游戏结束</h2>
+        <p>距离：<strong id="endScore">0</strong>m</p>
+        <p id="newBest" style="color:#ffd700;display:none;">🏆 新纪录！</p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, G;
+        let player, obstacles, particles, score, speed, bestScore;
+        let paused, gameOver, jumpCount, groundOffset, animId;
+        let bgMountains = [];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 600);
+            W = maxW; H = Math.floor(W * 0.45);
+            canvas.width = W; canvas.height = H;
+            G = Math.floor(H / 10);
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            player = { x: Math.floor(W * 0.15), y: G * 5, vy: 0, jumping: false, w: G * 0.9, h: G * 1.2 };
+            obstacles = [];
+            particles = [];
+            score = 0; speed = 3.5; jumpCount = 0; groundOffset = 0;
+            paused = false; gameOver = false;
+            bestScore = parseInt(localStorage.getItem('runner-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('pauseBtn').textContent = '⏯ 暂停';
+            bgMountains = [];
+            for (let i = 0; i < 8; i++) {
+                bgMountains.push({ x: Math.random() * W, h: G * 2 + Math.random() * G * 3, w: G * 3 + Math.random() * G * 3 });
+            }
+            loop();
+        }
+
+        function spawnObstacle() {
+            if (obstacles.length > 0) {
+                const last = obstacles[obstacles.length - 1];
+                if (last.x > W - W * 0.35) return;
+            }
+            const types = [
+                { w: G * 0.6, h: G * 0.8, color: '#e74c3c', name: 'cactus' },
+                { w: G * 0.8, h: G * 0.5, color: '#8b4513', name: 'box' },
+                { w: G * 1.2, h: G * 0.4, color: '#555', name: 'rock' },
+            ];
+            const t = types[Math.floor(Math.random() * types.length)];
+            obstacles.push({
+                x: W + Math.random() * 40,
+                y: G * 6.5 - t.h,
+                w: t.w, h: t.h,
+                color: t.color, name: t.name
+            });
+        }
+
+        function jump() {
+            if (gameOver || paused) return;
+            if (jumpCount >= 2) return;
+            player.vy = -(G * 1.3);
+            player.jumping = true;
+            jumpCount++;
+            // Particles
+            for (let i = 0; i < 5; i++) {
+                particles.push({
+                    x: player.x, y: player.y + player.h,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: Math.random() * 2,
+                    life: 15, color: '#fff'
+                });
+            }
+        }
+
+        function update() {
+            if (gameOver || paused) return;
+
+            // Speed increase
+            speed = 3.5 + score / 200;
+            groundOffset = (groundOffset + speed) % (G * 0.5);
+
+            // Player gravity
+            player.vy += 0.5;
+            player.y += player.vy;
+            const floorY = G * 6.5 - player.h;
+            if (player.y >= floorY) {
+                player.y = floorY;
+                player.vy = 0;
+                player.jumping = false;
+                jumpCount = 0;
+            }
+
+            // Score
+            score = Math.floor(score + speed);
+            document.getElementById('score').textContent = Math.floor(score / 10);
+
+            // Spawn obstacles
+            if (Math.random() < 0.012 + speed * 0.001) spawnObstacle();
+
+            // Update obstacles
+            for (let o of obstacles) o.x -= speed;
+            obstacles = obstacles.filter(o => o.x + o.w > -50);
+
+            // Update particles
+            for (let p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+
+            // Update bg
+            for (let m of bgMountains) { m.x -= speed * 0.3; if (m.x + m.w < -10) { m.x = W + Math.random() * 50; m.h = G * 2 + Math.random() * G * 3; } }
+
+            // Collision
+            for (let o of obstacles) {
+                const px = player.x + player.w * 0.2, py = player.y + player.h * 0.2;
+                const pw = player.w * 0.6, ph = player.h * 0.6;
+                if (px < o.x + o.w && px + pw > o.x && py < o.y + o.h && py + ph > o.y) {
+                    endGame();
+                    return;
+                }
+            }
+        }
+
+        function drawBg() {
+            // Sky
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+            skyGrad.addColorStop(0, '#1a1a40'); skyGrad.addColorStop(0.5, '#2d1b69'); skyGrad.addColorStop(1, '#e8a87c');
+            ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, H);
+
+            // Mountains
+            ctx.fillStyle = '#1a1a2e';
+            for (let m of bgMountains) {
+                ctx.fillStyle = '#1a1a3e';
+                ctx.beginPath(); ctx.moveTo(m.x, G * 6.5);
+                ctx.lineTo(m.x + m.w / 2, G * 6.5 - m.h);
+                ctx.lineTo(m.x + m.w, G * 6.5);
+                ctx.fill();
+            }
+
+            // Ground
+            ctx.fillStyle = '#5d4037'; ctx.fillRect(0, G * 6.5, W, H - G * 6.5);
+            ctx.fillStyle = '#795548'; ctx.fillRect(0, G * 6.5, W, G * 0.3);
+
+            // Ground dashes
+            ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 2;
+            ctx.setLineDash([G * 0.5, G * 0.5]);
+            ctx.beginPath(); ctx.moveTo(-groundOffset, G * 6.5 + G * 0.6); ctx.lineTo(W + G, G * 6.5 + G * 0.6);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            drawBg();
+
+            // Obstacles
+            for (let o of obstacles) {
+                ctx.fillStyle = o.color;
+                ctx.fillRect(o.x, o.y, o.w, o.h);
+                ctx.fillStyle = 'rgba(255,255,255,0.15)';
+                ctx.fillRect(o.x, o.y, o.w, o.h * 0.3);
+                // Eyes on cactus
+                if (o.name === 'cactus') {
+                    ctx.fillStyle = '#fff'; ctx.fillRect(o.x + o.w * 0.25, o.y + o.h * 0.3, 4, 4);
+                    ctx.fillRect(o.x + o.w * 0.55, o.y + o.h * 0.3, 4, 4);
+                }
+            }
+
+            // Particles
+            for (let p of particles) {
+                ctx.fillStyle = `rgba(255,255,255,${p.life / 20})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Player (stick figure runner)
+            const px = player.x, py = player.y;
+            const pw = player.w, ph = player.h;
+            // Body
+            ctx.fillStyle = '#00d4ff';
+            ctx.fillRect(px, py + ph * 0.3, pw, ph * 0.7);
+            // Head
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath(); ctx.arc(px + pw / 2, py + ph * 0.15, pw * 0.45, 0, Math.PI * 2); ctx.fill();
+            // Eyes
+            ctx.fillStyle = '#333'; ctx.fillRect(px + pw * 0.3, py + ph * 0.08, pw * 0.2, pw * 0.2);
+            ctx.fillRect(px + pw * 0.55, py + ph * 0.08, pw * 0.2, pw * 0.2);
+            // Legs animation
+            const legPhase = Math.sin(Date.now() / 80) * 0.3;
+            ctx.fillStyle = '#00a0cc';
+            ctx.fillRect(px + pw * 0.15, py + ph * 0.85, pw * 0.25, ph * 0.4);
+            ctx.fillRect(px + pw * 0.6, py + ph * 0.85, pw * 0.25, ph * (0.4 + legPhase));
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath(); ctx.ellipse(px + pw / 2, G * 6.5 + 2, pw * 0.5, pw * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Pause overlay
+            if (paused) {
+                ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = '#fff'; ctx.font = `bold ${G}px "Segoe UI"`; ctx.textAlign = 'center';
+                ctx.fillText('⏸ 暂停', W / 2, H / 2); ctx.textAlign = 'start';
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            const finalDist = Math.floor(score / 10);
+            document.getElementById('endScore').textContent = finalDist;
+            if (finalDist > bestScore) {
+                bestScore = finalDist;
+                localStorage.setItem('runner-best', bestScore);
+                document.getElementById('best').textContent = bestScore;
+                document.getElementById('newBest').style.display = 'block';
+            } else {
+                document.getElementById('newBest').style.display = 'none';
+            }
+            document.getElementById('endOverlay').style.display = 'block';
+        }
+
+        function loop() {
+            update();
+            draw();
+            if (!gameOver) animId = requestAnimationFrame(loop);
+        }
+
+        function togglePause() {
+            if (gameOver) return;
+            paused = !paused;
+            document.getElementById('pauseBtn').textContent = paused ? '▶ 继续' : '⏯ 暂停';
+            if (!paused) loop();
+        }
+
+        // Input
+        document.addEventListener('keydown', e => {
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                e.preventDefault();
+                jump();
+            }
+            if (e.key === 'p' || e.key === 'P') togglePause();
+        });
+
+        canvas.addEventListener('click', () => jump());
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+        window.addEventListener('resize', () => { resize(); });
+
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>021 - 涂鸦画板</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 4px; }
+
+        .toolbar { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; justify-content: center; align-items: center; }
+
+        .color-picker { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+        .color-btn {
+            width: 28px; height: 28px; border-radius: 50%; border: 2px solid #333;
+            cursor: pointer; transition: all 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .color-btn.active { border-color: #fff; transform: scale(1.25); box-shadow: 0 0 8px currentColor; }
+
+        .size-btn, .tool-btn {
+            padding: 5px 12px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: 0.8em; -webkit-tap-highlight-color: transparent;
+        }
+        .size-btn.active, .tool-btn.active { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; font-weight: bold; }
+        .tool-btn.eraser-active { background: #ff444433; border-color: #ff4444; color: #ff8888; }
+
+        .canvas-wrap { width: 100%; max-width: 480px; aspect-ratio: 1; }
+        canvas {
+            width: 100%; height: 100%; display: block; background: #fff;
+            border: 2px solid #333; border-radius: 6px; touch-action: none;
+            cursor: crosshair;
+        }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>🎨 涂鸦画板 — #021</h1>
+
+    <div class="toolbar">
+        <div class="color-picker" id="colors">
+            <button class="color-btn active" data-color="#000000" style="background:#000; border-color:#555;"></button>
+            <button class="color-btn" data-color="#ff0000" style="background:#f00;"></button>
+            <button class="color-btn" data-color="#ff8800" style="background:#f80;"></button>
+            <button class="color-btn" data-color="#ffdd00" style="background:#fd0;"></button>
+            <button class="color-btn" data-color="#00cc00" style="background:#0c0;"></button>
+            <button class="color-btn" data-color="#0088ff" style="background:#08f;"></button>
+            <button class="color-btn" data-color="#8800ff" style="background:#80f;"></button>
+            <button class="color-btn" data-color="#ff44aa" style="background:#f4a;"></button>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="size-btn active" data-size="3">🖊 细</button>
+        <button class="size-btn" data-size="8">🖊 中</button>
+        <button class="size-btn" data-size="16">🖊 粗</button>
+        <button class="tool-btn" id="eraserBtn">🧹 橡皮</button>
+        <button class="tool-btn" id="clearBtn">🗑 清除</button>
+        <button class="tool-btn" id="saveBtn">💾 保存</button>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="board"></canvas></div>
+    <div class="info">💡 鼠标/手指拖动画画 | 可保存为图片</div>
+
+    <script>
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+        let penColor = '#000000', penSize = 3, eraser = false, drawing = false;
+        let lastX, lastY;
+
+        function resizeCanvas() {
+            const wrap = canvas.parentElement;
+            const size = Math.min(wrap.clientWidth, 480);
+            // Preserve content
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            canvas.width = size; canvas.height = size;
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+        }
+
+        function startDraw(e) {
+            e.preventDefault();
+            drawing = true;
+            const pos = getPos(e);
+            lastX = pos.x; lastY = pos.y;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+        }
+
+        function doDraw(e) {
+            if (!drawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            ctx.lineWidth = penSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = eraser ? '#ffffff' : penColor;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            lastX = pos.x; lastY = pos.y;
+        }
+
+        function endDraw() { drawing = false; }
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', doDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseleave', endDraw);
+        canvas.addEventListener('touchstart', startDraw, { passive: false });
+        canvas.addEventListener('touchmove', doDraw, { passive: false });
+        canvas.addEventListener('touchend', endDraw);
+
+        // Color buttons
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                penColor = btn.dataset.color;
+                eraser = false;
+                document.getElementById('eraserBtn').classList.remove('eraser-active');
+            });
+        });
+
+        // Size buttons
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                penSize = parseInt(btn.dataset.size);
+            });
+        });
+
+        // Eraser
+        document.getElementById('eraserBtn').addEventListener('click', function() {
+            eraser = !eraser;
+            this.classList.toggle('eraser-active', eraser);
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        });
+
+        // Clear
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // Save
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'my-drawing.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

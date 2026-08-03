@@ -28,5 +28,10 @@ menu: main
 | 018 | 🏛️ 迷宫探索 | [开始游戏](/joy-game-study/play/018-maze/) |
 | 019 | 🔨 打地鼠 | [开始游戏](/joy-game-study/play/019-whack/) |
 | 020 | 💎 消消乐 | [开始游戏](/joy-game-study/play/020-match3/) |
+| 021 | 🎨 涂鸦画板 | [开始游戏](/joy-game-study/play/021-draw/) |
+| 022 | 🏀 投篮高手 | [开始游戏](/joy-game-study/play/022-basketball/) |
+| 023 | 💡 关灯谜题 | [开始游戏](/joy-game-study/play/023-lightsout/) |
+| 024 | 🧮 口算大挑战 | [开始游戏](/joy-game-study/play/024-math/) |
+| 025 | 🏃 跑酷 | [开始游戏](/joy-game-study/play/025-runner/) |
 
-> 进度：20 / 100 🎉
+> 进度：25 / 100 🎉

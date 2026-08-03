@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>022 - 投篮高手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .canvas-wrap { position: relative; width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #87CEEB; }
+
+        .power-bar-wrap {
+            width: 100%; max-width: 400px; height: 12px; background: #1a2840;
+            border-radius: 6px; margin-top: 6px; overflow: hidden; border: 1px solid #333;
+        }
+        .power-bar {
+            height: 100%; background: linear-gradient(90deg, #00ff00, #ffff00, #ff4444);
+            border-radius: 6px; transition: width 0.05s; width: 0%;
+        }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏀 投篮高手 — #022</h1>
+
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>连续命中：<span id="streak">0</span></span>
+        <span>投篮：<span id="attempts">0</span></span>
+    </div>
+
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="power-bar-wrap"><div class="power-bar" id="powerBar"></div></div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 按住鼠标/手指蓄力，松开投篮 | 空心入网额外加分</div>
+
+    <div class="overlay" id="endOverlay">
+        <h2>🏆 时间到！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 命中率：<strong id="endRate">0%</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H;
+        let score, streak, bestStreak, attempts, charging, power, ballX, ballY;
+        let ballVX, ballVY, ballActive, hoopX, hoopY, hoopDir;
+        let timeLeft, timerInterval, gameOver;
+        const HOOP_WIDTH = 50, BALL_R = 12, GRAVITY = 0.45;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 0.75);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            clearInterval(timerInterval);
+            score = 0; streak = 0; bestStreak = 0; attempts = 0;
+            power = 0; charging = false; ballActive = false; gameOver = false;
+            timeLeft = 45;
+            hoopY = Math.floor(H * 0.25);
+            hoopX = Math.floor(W / 2); hoopDir = 1;
+            ballX = Math.floor(W / 2); ballY = H - 40;
+            document.getElementById('score').textContent = '0';
+            document.getElementById('streak').textContent = '0';
+            document.getElementById('attempts').textContent = '0';
+            document.getElementById('powerBar').style.width = '0%';
+            document.getElementById('endOverlay').style.display = 'none';
+            resize(); draw();
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    gameOver = true;
+                    document.getElementById('endScore').textContent = score;
+                    document.getElementById('endRate').textContent = attempts > 0 ? Math.round(streakTotal / attempts * 100) + '%' : '0%';
+                    document.getElementById('endOverlay').style.display = 'block';
+                }
+            }, 1000);
+        }
+
+        function updateHoop() {
+            hoopX += hoopDir * 1.2;
+            if (hoopX > W - 70) hoopDir = -1;
+            if (hoopX < 70) hoopDir = 1;
+        }
+
+        function updateBall() {
+            if (!ballActive) return;
+            ballVY += GRAVITY;
+            ballX += ballVX; ballY += ballVY;
+
+            // Hoop collision
+            const rimL = hoopX - HOOP_WIDTH / 2, rimR = hoopX + HOOP_WIDTH / 2;
+            const rimY = hoopY;
+            if (ballY + BALL_R >= rimY && ballY - BALL_R <= rimY + 8 && ballX >= rimL && ballX <= rimR && ballVY > 0) {
+                // Score!
+                const isSwish = ballX > rimL + 8 && ballX < rimR - 8;
+                const points = isSwish ? 3 : 2;
+                score += points;
+                streak++;
+                attempts++;
+                if (streak > bestStreak) bestStreak = streak;
+                ballActive = false;
+                updateUI();
+                setTimeout(resetBall, 600);
+            }
+
+            // Miss (below screen or out of bounds)
+            if (ballY > H + 30 || ballX < -30 || ballX > W + 30) {
+                streak = 0; attempts++;
+                ballActive = false;
+                updateUI();
+                setTimeout(resetBall, 400);
+            }
+        }
+
+        function resetBall() {
+            ballX = Math.floor(W / 2); ballY = H - 40;
+            ballVX = 0; ballVY = 0;
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('streak').textContent = streak;
+            document.getElementById('attempts').textContent = attempts;
+        }
+
+        function shoot(px, py) {
+            if (ballActive || gameOver) return;
+            // Calculate direction from ball position to release point with power
+            const dx = ballX - px;
+            const dy = ballY - py;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const strength = power / 100;
+            ballVX = (dx / dist) * strength * 14;
+            ballVY = (dy / dist) * strength * 14;
+            ballActive = true;
+            power = 0;
+            document.getElementById('powerBar').style.width = '0%';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky gradient
+            const sky = ctx.createLinearGradient(0, 0, 0, H);
+            sky.addColorStop(0, '#87CEEB'); sky.addColorStop(1, '#c8e6ff');
+            ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+            // Ground
+            ctx.fillStyle = '#e67e22'; ctx.fillRect(0, H - 8, W, 8);
+            ctx.fillStyle = '#d35400'; ctx.fillRect(0, H - 4, W, 4);
+
+            // Backboard
+            const bx = hoopX;
+            ctx.fillStyle = '#ff4444';
+            ctx.fillRect(bx - HOOP_WIDTH / 2 - 6, hoopY - 20, HOOP_WIDTH + 12, 22);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.strokeRect(bx - HOOP_WIDTH / 2 - 6, hoopY - 20, HOOP_WIDTH + 12, 22);
+
+            // Rim
+            ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(bx - HOOP_WIDTH / 2, hoopY);
+            ctx.lineTo(bx + HOOP_WIDTH / 2, hoopY);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+
+            // Net (simple triangles)
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+            ctx.setLineDash([3, 2]);
+            ctx.beginPath();
+            ctx.moveTo(bx - HOOP_WIDTH / 2 + 3, hoopY);
+            ctx.lineTo(bx, hoopY + 30);
+            ctx.lineTo(bx + HOOP_WIDTH / 2 - 3, hoopY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Ball
+            ctx.fillStyle = '#e8860c';
+            ctx.beginPath(); ctx.arc(ballX, ballY, BALL_R, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(ballX, ballY, BALL_R, 0, Math.PI * 2); ctx.stroke();
+            // Ball lines
+            ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(ballX - BALL_R, ballY); ctx.lineTo(ballX + BALL_R, ballY); ctx.stroke();
+            ctx.beginPath(); ctx.arc(ballX, ballY, BALL_R * 0.9, 0, Math.PI * 2); ctx.stroke();
+
+            // Power indicator
+            if (charging) {
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(ballX - 3, ballY - 3, 6, 6);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText(Math.round(power) + '%', ballX, ballY - 20);
+                ctx.textAlign = 'start';
+            }
+
+            // Timer
+            ctx.fillStyle = '#333'; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('⏱ ' + timeLeft + 's', W - 10, 22);
+            ctx.textAlign = 'start';
+
+            updateHoop();
+            updateBall();
+            if (!gameOver && (ballActive || charging)) requestAnimationFrame(draw);
+        }
+
+        function loop () { draw(); if (!gameOver) requestAnimationFrame(loop); }
+
+        // Input: hold to charge
+        function startCharge(e) {
+            if (gameOver || ballActive) return;
+            e.preventDefault();
+            charging = true; power = 0;
+            function chargeUp() {
+                if (!charging) return;
+                power = Math.min(100, power + 2);
+                document.getElementById('powerBar').style.width = power + '%';
+                draw();
+                if (charging) requestAnimationFrame(chargeUp);
+            }
+            chargeUp();
+        }
+
+        function endCharge(e) {
+            if (!charging) return;
+            charging = false;
+            const rect = canvas.getBoundingClientRect();
+            const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+            const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+            const scaleX = W / rect.width;
+            shoot(cx - rect.left, cy - rect.top);
+            updateUI();
+            requestAnimationFrame(loop);
+        }
+
+        canvas.addEventListener('mousedown', startCharge);
+        canvas.addEventListener('mouseup', endCharge);
+        canvas.addEventListener('mouseleave', () => { charging = false; });
+        canvas.addEventListener('touchstart', startCharge, { passive: false });
+        canvas.addEventListener('touchend', endCharge);
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); draw(); });
+        newGame(); loop();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

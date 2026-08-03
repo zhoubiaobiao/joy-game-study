@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>023 - 关灯谜题</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 8px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .diff-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; justify-content: center; }
+        .diff-btn {
+            padding: 5px 12px; border: 2px solid #333; background: transparent;
+            color: #aaa; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.7em, 2.5vw, 0.85em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .diff-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; font-weight: bold; }
+
+        .grid-wrap { width: 100%; max-width: 400px; }
+        .grid {
+            display: grid; gap: 4px; width: 100%; aspect-ratio: 1;
+            padding: 8px; background: #0f0f23; border: 2px solid #333; border-radius: 8px;
+        }
+        .cell {
+            background: #333; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+            display: flex; align-items: center; justify-content: center;
+            font-size: clamp(1em, 4vw, 1.6em);
+        }
+        .cell.on { background: #ffd700; box-shadow: 0 0 12px #ffd70066; }
+        .cell:active { transform: scale(0.9); }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>💡 关灯谜题 — #023</h1>
+
+    <div class="diff-row">
+        <button class="diff-btn active" data-size="3">🟢 3×3</button>
+        <button class="diff-btn" data-size="5">🟡 5×5</button>
+        <button class="diff-btn" data-size="7">🔴 7×7</button>
+    </div>
+
+    <div class="top-bar">
+        <span>步数：<span id="moves">0</span></span>
+        <span>最佳：<span id="best">---</span></span>
+    </div>
+
+    <div class="grid-wrap">
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn" id="undoBtn">↩ 撤销</button>
+        <button class="btn primary" id="newBtn">🔄 新谜题</button>
+    </div>
+    <div class="info">💡 点击格子翻转自身和上下左右相邻格子 | 目标：全部熄灭</div>
+
+    <div class="overlay" id="winOverlay">
+        <h2>💡 全部熄灭！</h2>
+        <p>用了 <strong id="winMoves">0</strong> 步</p>
+        <p id="newRecord" style="color:#ffd700;display:none;">🏆 新纪录！</p>
+        <button onclick="newPuzzle()">🔄 新谜题</button>
+        <button onclick="nextLevel()" id="nextBtn" style="display:none;">▶ 下一难度</button>
+    </div>
+
+    <script>
+        let SIZE = 3, grid = [], moves = 0, history = [], won = false;
+        let bestScores = JSON.parse(localStorage.getItem('lightsout-best') || '{}');
+
+        function newPuzzle() {
+            grid = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+            // Generate solvable puzzle: simulate random clicks from empty state
+            const clicks = SIZE * SIZE;
+            for (let i = 0; i < clicks; i++) {
+                const r = Math.floor(Math.random() * SIZE);
+                const c = Math.floor(Math.random() * SIZE);
+                toggle(r, c, true);
+            }
+            // If all off or all on, add a few more
+            const allOff = grid.every(row => row.every(v => !v));
+            if (allOff) {
+                for (let i = 0; i < 3; i++) {
+                    toggle(Math.floor(Math.random() * SIZE), Math.floor(Math.random() * SIZE), true);
+                }
+            }
+            moves = 0; history = []; won = false;
+            document.getElementById('moves').textContent = '0';
+            document.getElementById('winOverlay').style.display = 'none';
+            updateBestDisplay();
+            render();
+        }
+
+        function toggle(r, c, silent) {
+            const dirs = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (const [dr, dc] of dirs) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                    grid[nr][nc] = !grid[nr][nc];
+                }
+            }
+            if (!silent) {
+                history.push({ r, c });
+                if (history.length > 200) history.shift();
+            }
+        }
+
+        function cellClick(r, c) {
+            if (won) return;
+            toggle(r, c);
+            moves++;
+            document.getElementById('moves').textContent = moves;
+            render();
+            if (checkWin()) {
+                won = true;
+                document.getElementById('winMoves').textContent = moves;
+                const key = '' + SIZE;
+                const isNew = !bestScores[key] || moves < bestScores[key];
+                document.getElementById('newRecord').style.display = isNew ? 'block' : 'none';
+                if (isNew) { bestScores[key] = moves; localStorage.setItem('lightsout-best', JSON.stringify(bestScores)); }
+                updateBestDisplay();
+                document.getElementById('nextBtn').style.display = SIZE < 7 ? 'inline-block' : 'none';
+                document.getElementById('winOverlay').style.display = 'block';
+            }
+        }
+
+        function checkWin() {
+            return grid.every(row => row.every(v => !v));
+        }
+
+        function undo() {
+            if (history.length === 0 || won) return;
+            const last = history.pop();
+            toggle(last.r, last.c, true);
+            moves++;
+            document.getElementById('moves').textContent = moves;
+            render();
+        }
+
+        function updateBestDisplay() {
+            const key = '' + SIZE;
+            document.getElementById('best').textContent = bestScores[key] ? bestScores[key] + '步' : '---';
+        }
+
+        function nextLevel() {
+            if (SIZE < 7) {
+                const sizes = [3, 5, 7];
+                const idx = sizes.indexOf(SIZE);
+                if (idx < sizes.length - 1) {
+                    SIZE = sizes[idx + 1];
+                    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector(`[data-size="${SIZE}"]`).classList.add('active');
+                    newPuzzle();
+                }
+            }
+        }
+
+        function render() {
+            const gridEl = document.getElementById('grid');
+            gridEl.style.gridTemplateColumns = `repeat(${SIZE}, 1fr)`;
+            gridEl.style.gridTemplateRows = `repeat(${SIZE}, 1fr)`;
+            gridEl.innerHTML = '';
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell' + (grid[r][c] ? ' on' : '');
+                    cell.textContent = grid[r][c] ? '💡' : '';
+                    cell.addEventListener('click', () => cellClick(r, c));
+                    gridEl.appendChild(cell);
+                }
+            }
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newPuzzle);
+        document.getElementById('undoBtn').addEventListener('click', undo);
+
+        document.querySelectorAll('.diff-btn').forEach(b => b.addEventListener('click', () => {
+            document.querySelectorAll('.diff-btn').forEach(x => x.classList.remove('active'));
+            b.classList.add('active');
+            SIZE = parseInt(b.dataset.size);
+            newPuzzle();
+        }));
+
+        newPuzzle();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

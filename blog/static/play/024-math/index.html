@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>024 - 口算大挑战</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e; color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; min-height: 100dvh; padding: 10px;
+            user-select: none; -webkit-user-select: none;
+        }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+
+        .top-bar { display: flex; gap: 16px; margin-bottom: 10px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+
+        .timer-bar-wrap {
+            width: 100%; max-width: 420px; height: 10px; background: #1a2840;
+            border-radius: 5px; margin-bottom: 12px; overflow: hidden; border: 1px solid #333;
+        }
+        .timer-bar {
+            height: 100%; background: linear-gradient(90deg, #ff4444, #ffd700, #00ff00);
+            border-radius: 5px; transition: width 0.3s linear;
+        }
+
+        .question-area {
+            background: #16213e; border: 2px solid #333; border-radius: 12px;
+            padding: 20px 24px; text-align: center; width: 100%; max-width: 420px;
+        }
+        .question {
+            font-size: clamp(2em, 8vw, 3em); font-weight: bold; color: #fff;
+            margin-bottom: 12px; letter-spacing: 2px;
+        }
+        .answer-input {
+            background: #0f0f23; border: 2px solid #555; border-radius: 8px;
+            color: #ffd700; font-size: clamp(1.4em, 5vw, 2em); padding: 10px 16px;
+            width: 160px; text-align: center; font-family: inherit; font-weight: bold;
+            outline: none;
+        }
+        .answer-input:focus { border-color: #00d4ff; }
+        .answer-input.correct { border-color: #00ff44; background: #00ff4411; }
+        .answer-input.wrong { border-color: #ff4444; background: #ff444411; animation: shake 0.3s; }
+        @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+
+        .feedback { font-size: clamp(0.9em, 3vw, 1.1em); margin-top: 8px; min-height: 1.4em; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: 8px 18px; border: 2px solid #444; background: transparent;
+            color: #ccc; border-radius: 8px; cursor: pointer;
+            font-size: clamp(0.75em, 2.5vw, 0.9em);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+
+        .info { color: #555; font-size: 0.7em; margin-top: 4px; text-align: center; }
+
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px;
+            text-align: center; display: none; z-index: 10;
+        }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; }
+        .overlay.lose h2 { color: #ff5555; }
+        .overlay.win h2 { color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button {
+            padding: 10px 28px; font-size: 1em;
+            background: #00d4ff; color: #1a1a2e; border: none;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧮 口算大挑战 — #024</h1>
+
+    <div class="top-bar">
+        <span>得分：<span id="score">0</span></span>
+        <span>连击：<span id="combo">x1</span></span>
+        <span>最佳：<span id="best">0</span></span>
+        <span>答对：<span id="correct">0</span></span>
+    </div>
+
+    <div class="timer-bar-wrap"><div class="timer-bar" id="timerBar" style="width:100%"></div></div>
+
+    <div class="question-area">
+        <div class="question" id="question">3 + 5 = ?</div>
+        <input type="number" class="answer-input" id="answer" placeholder="?" autocomplete="off" inputmode="numeric">
+        <div class="feedback" id="feedback"></div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn primary" id="newBtn">🔄 新游戏</button>
+    </div>
+    <div class="info">💡 输入答案后按回车提交 | 时间越短得分越高 | 3次答错游戏结束</div>
+
+    <div class="overlay lose" id="loseOverlay">
+        <h2>💥 游戏结束</h2>
+        <p>最终得分：<strong id="loseScore">0</strong> | 答对：<strong id="loseCorrect">0</strong> | 最高连击：<strong id="loseCombo">1</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+
+    <script>
+        const TIME_LIMIT = 10; // seconds per question
+        let score, combo, bestScore, correctCount, wrongCount, maxWrong = 3;
+        let answer, timeLeft, timerInterval, gameOver;
+        let questionText = '';
+
+        function newGame() {
+            clearInterval(timerInterval);
+            score = 0; combo = 1; correctCount = 0; wrongCount = 0; gameOver = false;
+            bestScore = parseInt(localStorage.getItem('math-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('combo').textContent = 'x1';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('correct').textContent = '0';
+            document.getElementById('loseOverlay').style.display = 'none';
+            document.getElementById('timerBar').style.width = '100%';
+            document.getElementById('feedback').textContent = '';
+            document.getElementById('answer').value = '';
+            document.getElementById('answer').className = 'answer-input';
+            document.getElementById('answer').focus();
+            nextQuestion();
+        }
+
+        function generateQuestion() {
+            const ops = ['+', '-', '×'];
+            const op = ops[Math.floor(Math.random() * ops.length)];
+            let a, b;
+            switch (op) {
+                case '+':
+                    a = Math.floor(Math.random() * 50) + 1;
+                    b = Math.floor(Math.random() * 50) + 1;
+                    answer = a + b;
+                    break;
+                case '-':
+                    a = Math.floor(Math.random() * 80) + 10;
+                    b = Math.floor(Math.random() * a);
+                    answer = a - b;
+                    break;
+                case '×':
+                    a = Math.floor(Math.random() * 12) + 1;
+                    b = Math.floor(Math.random() * 12) + 1;
+                    answer = a * b;
+                    break;
+            }
+            questionText = `${a} ${op} ${b} = ?`;
+            return { text: questionText, answer };
+        }
+
+        function nextQuestion() {
+            if (gameOver) return;
+            const q = generateQuestion();
+            document.getElementById('question').textContent = q.text;
+            document.getElementById('answer').value = '';
+            document.getElementById('answer').className = 'answer-input';
+            document.getElementById('answer').focus();
+            document.getElementById('feedback').textContent = '';
+            timeLeft = TIME_LIMIT;
+            document.getElementById('timerBar').style.width = '100%';
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                document.getElementById('timerBar').style.width = Math.max(0, timeLeft / TIME_LIMIT * 100) + '%';
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    handleWrong('⏰ 时间到！');
+                }
+            }, 100);
+        }
+
+        function handleWrong(msg) {
+            wrongCount++;
+            combo = 1;
+            document.getElementById('combo').textContent = 'x1';
+            document.getElementById('feedback').textContent = msg + ' 答案：' + answer;
+            document.getElementById('feedback').style.color = '#ff5555';
+            document.getElementById('answer').classList.add('wrong');
+            if (wrongCount >= maxWrong) {
+                gameOver = true;
+                clearInterval(timerInterval);
+                if (score > bestScore) { bestScore = score; localStorage.setItem('math-best', bestScore); }
+                document.getElementById('loseScore').textContent = score;
+                document.getElementById('loseCorrect').textContent = correctCount;
+                document.getElementById('loseCombo').textContent = combo;
+                document.getElementById('loseOverlay').style.display = 'block';
+            } else {
+                setTimeout(nextQuestion, 1200);
+            }
+        }
+
+        document.getElementById('answer').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (gameOver) return;
+                const userAnswer = parseInt(this.value);
+                if (isNaN(userAnswer)) return;
+
+                clearInterval(timerInterval);
+                if (userAnswer === answer) {
+                    // Correct!
+                    const timeBonus = Math.floor(timeLeft * 10);
+                    const points = (10 + timeBonus) * combo;
+                    score += points;
+                    correctCount++;
+                    combo = Math.min(10, combo + 1);
+                    document.getElementById('score').textContent = score;
+                    document.getElementById('combo').textContent = 'x' + combo;
+                    document.getElementById('correct').textContent = correctCount;
+                    document.getElementById('feedback').textContent = `✅ 正确！+${points}分`;
+                    document.getElementById('feedback').style.color = '#44ff44';
+                    document.getElementById('answer').classList.add('correct');
+                    if (score > bestScore) { bestScore = score; localStorage.setItem('math-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                    setTimeout(nextQuestion, 600);
+                } else {
+                    handleWrong('❌ 答错了！');
+                }
+            }
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
