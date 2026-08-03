@@ -144,10 +144,16 @@ function buildNavJs() {
 
 // ─── 2. 生成 _index.md ──────────────────────────────────
 function buildIndex() {
-  const items = games.map(g => {
+  // 将游戏分成3列，计算每列数量
+  const COLS = 3;
+  const perCol = Math.ceil(games.length / COLS);
+  const cols = [[], [], []];
+  games.forEach((g, i) => {
     const num = g.id.split('-')[0];
-    return `<a href="/joy-game-study/play/${g.id}/"><span class="gl-num">${num}</span> ${g.name}</a>`;
-  }).join('\n');
+    cols[Math.floor(i / perCol)].push(
+      `<a href="/joy-game-study/play/${g.id}/" style="color:#ccc;text-decoration:none;line-height:2.1;">${num} ${g.name}</a><br>`
+    );
+  });
 
   const lines = [
     '---',
@@ -156,43 +162,22 @@ function buildIndex() {
     'menu: main',
     '---',
     '',
-    '<style>',
-    '    .gl-list {',
-    '        column-count: 3;',
-    '        column-gap: 20px;',
-    '        margin: 12px 0;',
-    '        line-height: 2;',
-    '    }',
-    '    .gl-list a {',
-    '        display: block;',
-    '        color: #ccc;',
-    '        text-decoration: none;',
-    '        font-size: 0.92em;',
-    '        white-space: nowrap;',
-    '        overflow: hidden;',
-    '        text-overflow: ellipsis;',
-    '    }',
-    '    .gl-list a:hover { color: #00d4ff; }',
-    '    .gl-num {',
-    '        color: #555;',
-    '        font-family: monospace;',
-    '        font-size: 0.85em;',
-    '        margin-right: 2px;',
-    '    }',
-    '    @media (max-width: 600px) {',
-    '        .gl-list { column-count: 2; column-gap: 12px; line-height: 1.9; }',
-    '        .gl-list a { font-size: 0.85em; }',
-    '    }',
-    '</style>',
-    '',
     '## 🎮 已完成游戏',
     '',
-    '<div class="gl-list">',
-    items,
-    '</div>',
-    '',
-    `> 进度：${games.length} / 100 🎉`,
+    '<table style="width:100%;border:none;font-size:0.92em;"><tr style="vertical-align:top;">',
   ];
+
+  for (const col of cols) {
+    lines.push('<td style="border:none;padding:0 6px 0 0;width:33.3%;">');
+    for (const item of col) {
+      lines.push(item);
+    }
+    lines.push('</td>');
+  }
+
+  lines.push('</tr></table>');
+  lines.push('');
+  lines.push(`> 进度：${games.length} / 100 🎉`);
 
   const dest = path.join(BLOG_CONTENT, '_index.md');
   fs.writeFileSync(dest, lines.join('\n') + '\n', 'utf-8');
