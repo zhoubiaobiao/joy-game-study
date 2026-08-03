@@ -231,7 +231,7 @@
 
         // 触屏滑动
         let tsx=0,tsy=0;
-        canvas.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;});
+        canvas.addEventListener('touchstart',e=>{e.preventDefault();tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;});
         canvas.addEventListener('touchend',e=>{
             if(won)return;
             const dx=e.changedTouches[0].clientX-tsx, dy=e.changedTouches[0].clientY-tsy;

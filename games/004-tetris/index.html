@@ -218,7 +218,7 @@
         document.addEventListener('keydown', e => {
             if(gameOver) return;
             if(e.key==='p'||e.key==='P'){togglePause();return;}
-            if(paused) return; e.preventDefault();
+            if(paused) { e.preventDefault(); return; } e.preventDefault();
             switch(e.key){ case'ArrowLeft':case'a':case'A':moveLeft();break; case'ArrowRight':case'd':case'D':moveRight();break; case'ArrowDown':case's':case'S':softDrop();break; case'ArrowUp':case'w':case'W':rotate();break; case' ':hardDrop();break; default:return; }
             draw();
         });

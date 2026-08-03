@@ -177,6 +177,7 @@
         }
 
         function togglePause() {
+            if (!gameLoop && document.getElementById('gameOver').style.display!=='block' && score > 0) { return; }
             if (!gameLoop && document.getElementById('gameOver').style.display!=='block') { restart(); return; }
             if (paused) { paused=false; gameLoop=setInterval(update,speed); }
             else { paused=true; clearInterval(gameLoop); gameLoop=null; }

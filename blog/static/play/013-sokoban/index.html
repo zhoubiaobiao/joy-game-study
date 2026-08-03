@@ -259,7 +259,7 @@
 
         // 触屏滑动
         let tsX=0,tsY=0;
-        canvas.addEventListener('touchstart',e=>{tsX=e.touches[0].clientX;tsY=e.touches[0].clientY;});
+        canvas.addEventListener('touchstart',e=>{e.preventDefault();tsX=e.touches[0].clientX;tsY=e.touches[0].clientY;});
         canvas.addEventListener('touchend',e=>{
             const dx=e.changedTouches[0].clientX-tsX, dy=e.changedTouches[0].clientY-tsY;
             if(Math.abs(dx)<15&&Math.abs(dy)<15) return;

@@ -193,8 +193,8 @@
             ctx.beginPath(); ctx.roundRect(0, p1Y-PH/2, PW, PH, 6); ctx.fill();
 
             const grad2 = ctx.createLinearGradient(W-PW,p2Y-PH/2,W-PW,p2Y+PH/2);
-            gamemode==='2p' ? grad2.addColorStop(0,'#ff6644') : grad2.addColorStop(0,'#ff8844');
-            gamemode==='2p' ? grad2.addColorStop(1,'#cc3311') : grad2.addColorStop(1,'#cc5500');
+            gameMode==='2p' ? grad2.addColorStop(0,'#ff6644') : grad2.addColorStop(0,'#ff8844');
+            gameMode==='2p' ? grad2.addColorStop(1,'#cc3311') : grad2.addColorStop(1,'#cc5500');
             ctx.fillStyle = grad2;
             ctx.beginPath(); ctx.roundRect(W-PW, p2Y-PH/2, PW, PH, 6); ctx.fill();
 

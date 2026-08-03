@@ -78,7 +78,7 @@
         const statusEl = document.getElementById('status');
         let grid = Array(9).fill(null);
         let wins = 0, draws = 0, losses = 0;
-        let gameOver = false, thinking = false;
+        let gameOver = false, thinking = false, aiTimeout = null;
 
         // 胜利线
         const LINES = [
@@ -135,7 +135,7 @@
             statusEl.textContent = 'AI 思考中...';
             renderBoard();
 
-            setTimeout(() => {
+                aiTimeout = setTimeout(() => {
                 let bestScore = -Infinity, bestIdx = empty[0];
                 for (const i of empty) {
                     grid[i] = 'O';
@@ -209,6 +209,7 @@
         }
 
         function newRound() {
+            if (aiTimeout) { clearTimeout(aiTimeout); aiTimeout = null; }
             grid = Array(9).fill(null);
             gameOver = false; thinking = false;
             statusEl.textContent = '轮到你了，点击空格落子';

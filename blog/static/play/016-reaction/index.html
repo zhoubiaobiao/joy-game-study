@@ -119,8 +119,11 @@
 
         function setMode(m) {
             mode = m; state = 'idle'; clearTimeout(timer); clearTimeout(waitTimer);
+            if (window._rapidCd) { clearInterval(window._rapidCd); window._rapidCd = null; }
             area.className = 'test-area idle';
             contentEl.innerHTML = '<div class="test-text" id="testText">点击开始</div><div class="test-sub" id="testSub">测试你的反应速度</div>';
+            textEl = document.getElementById('testText');
+            subEl = document.getElementById('testSub');
             rapidHits = 0;
         }
 
@@ -169,7 +172,7 @@
             choiceTarget = targetColor;
             const shuffled = [...COLORS].sort(()=>Math.random()-0.5);
             contentEl.innerHTML = `<div class="test-text" style="margin-bottom:16px;">点击 <span style="color:${targetColor}">■</span></div><div class="choice-grid">${shuffled.map(c=>`<div class="choice-btn" style="background:${c}" data-color="${c}"></div>`).join('')}</div>`;
-            document.querySelectorAll('.choice-btn').forEach(b=>b.addEventListener('click',()=>choiceClick(b.dataset.color)));
+            document.querySelectorAll('.choice-btn').forEach(b=>b.addEventListener('click',(e)=>{e.stopPropagation();choiceClick(b.dataset.color);}));
             timer = Date.now();
         }
 

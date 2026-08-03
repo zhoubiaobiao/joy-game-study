@@ -98,7 +98,7 @@
         const GRID = 10; // 网格大小
         let COLS, ROWS, CELL, towers=[], enemies=[], projectiles=[], particles=[];
         let gold, lives, wave, kills, selectedTower='arrow', sellMode=false;
-        let animId, waveActive=false, spawnQueue=[], spawnTimer=0;
+        let animId, waveActive=false, spawnQueue=[], spawnTimer=0, gameEnded=false;
         let path=[]; // 路径坐标序列 [r,c]
 
         // 地图: 0=空地, 1=路径, 2=不可建
@@ -143,7 +143,7 @@
         function newGame() {
             resize(); buildPath();
             towers=[]; enemies=[]; projectiles=[]; particles=[];
-            gold=200; lives=20; wave=0; kills=0; waveActive=false; sellMode=false;
+            gold=200; lives=20; wave=0; kills=0; waveActive=false; sellMode=false; gameEnded=false;
             document.getElementById('gold').textContent=gold;
             document.getElementById('lives').textContent=lives;
             document.getElementById('waveNum').textContent='1';
@@ -218,13 +218,13 @@
 
                 // 射击
                 if (t.type==='arrow') {
-                    projectiles.push({x:t.cx, y:t.cy, tx:target.x, ty:target.y, speed:8, dmg:t.dmg, effect:null, life:30});
+                    projectiles.push({x:t.cx, y:t.cy, target:target, speed:8, dmg:t.dmg, effect:null, life:40});
                     t.cooldown = 20;
                 } else if (t.type==='ice') {
-                    projectiles.push({x:t.cx, y:t.cy, tx:target.x, ty:target.y, speed:6, dmg:t.dmg, effect:'slow', life:30});
+                    projectiles.push({x:t.cx, y:t.cy, target:target, speed:6, dmg:t.dmg, effect:'slow', life:40});
                     t.cooldown = 30;
                 } else if (t.type==='cannon') {
-                    projectiles.push({x:t.cx, y:t.cy, tx:target.x, ty:target.y, speed:4, dmg:t.dmg, effect:'aoe', life:30});
+                    projectiles.push({x:t.cx, y:t.cy, target:target, speed:4, dmg:t.dmg, effect:'aoe', life:40});
                     t.cooldown = 45;
                 }
             }
@@ -232,27 +232,37 @@
             // 弹丸
             for (let i=projectiles.length-1;i>=0;i--) {
                 const p = projectiles[i];
-                const dx=p.tx-p.x, dy=p.ty-p.y, dist=Math.hypot(dx,dy);
-                if (dist<p.speed) { p.x=p.tx; p.y=p.ty; p.hit=true; } else { p.x+=dx/dist*p.speed; p.y+=dy/dist*p.speed; p.life--; }
-                if (p.hit || p.life<=0) {
-                    if (p.hit) {
-                        // 找最近的敌人
-                        let closest=null, cdist=Infinity;
-                        for (const e of enemies) {
-                            const d=Math.hypot(e.x-p.x, e.y-p.y);
-                            if (d<CELL*1.5 && d<cdist) { cdist=d; closest=e; }
-                        }
-                        if (closest) {
-                            closest.hp -= p.dmg;
-                            if (p.effect==='slow') closest.slowed=60;
-                            if (p.effect==='aoe') {
-                                for (const e of enemies) {
-                                    if (Math.hypot(e.x-p.x, e.y-p.y)<CELL*2) { e.hp-=p.dmg*0.5; if (p.effect==='slow') e.slowed=30; }
-                                }
-                                spawnParticles(p.x, p.y, '#ff8844', 8);
+                // 动态追踪目标
+                if (p.target && enemies.includes(p.target)) {
+                    const dx=p.target.x-p.x, dy=p.target.y-p.y, dist=Math.hypot(dx,dy);
+                    if (dist>0) { p.x+=dx/dist*p.speed; p.y+=dy/dist*p.speed; }
+                } else {
+                    p.life--; // 目标已消失
+                }
+                p.life--;
+                // 命中判定
+                let hitTarget = null;
+                if (p.target && enemies.includes(p.target)) {
+                    const d = Math.hypot(p.x-p.target.x, p.y-p.target.y);
+                    if (d < CELL*0.8) hitTarget = p.target;
+                }
+                // 如果没有跟踪目标，检查附近是否有敌人
+                if (!hitTarget) {
+                    for (const e of enemies) {
+                        if (Math.hypot(p.x-e.x, p.y-e.y) < CELL) { hitTarget = e; break; }
+                    }
+                }
+                if (hitTarget || p.life<=0) {
+                    if (hitTarget) {
+                        hitTarget.hp -= p.dmg;
+                        if (p.effect==='slow') hitTarget.slowed=60;
+                        if (p.effect==='aoe') {
+                            for (const e of enemies) {
+                                if (Math.hypot(e.x-p.x, e.y-p.y)<CELL*2) { e.hp-=p.dmg*0.5; if (p.effect==='slow') e.slowed=30; }
                             }
-                            spawnParticles(p.x, p.y, p.effect==='aoe'?'#ff8844':p.effect==='slow'?'#88ccff':'#ffdd44', 4);
+                            spawnParticles(p.x, p.y, '#ff8844', 8);
                         }
+                        spawnParticles(p.x, p.y, p.effect==='aoe'?'#ff8844':p.effect==='slow'?'#88ccff':'#ffdd44', 4);
                     }
                     projectiles.splice(i,1);
                 }
@@ -290,6 +300,7 @@
         }
 
         function endGame(win) {
+            if (gameEnded) return; gameEnded = true;
             waveActive=false;
             if (win) { document.getElementById('winKills').textContent=kills; document.getElementById('winOverlay').style.display='block'; }
             else { document.getElementById('loseWave').textContent=wave; document.getElementById('loseOverlay').style.display='block'; }

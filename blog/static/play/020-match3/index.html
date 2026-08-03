@@ -186,11 +186,40 @@
                 document.getElementById('combo').textContent = 'x' + combo;
                 updateBest();
                 locked = false;
+                checkGameOver();
             }, 150);
         }
 
         function updateBest() {
             if (score > bestScore) { bestScore = score; localStorage.setItem('match3-best', bestScore); document.getElementById('best').textContent = bestScore; }
+        }
+
+        function hasValidMoves() {
+            for (let r=0; r<SIZE; r++) for (let c=0; c<SIZE; c++) {
+                // 尝试与右边交换
+                if (c+1 < SIZE) {
+                    [grid[r][c], grid[r][c+1]] = [grid[r][c+1], grid[r][c]];
+                    if (findMatches().size > 0) { [grid[r][c], grid[r][c+1]] = [grid[r][c+1], grid[r][c]]; return true; }
+                    [grid[r][c], grid[r][c+1]] = [grid[r][c+1], grid[r][c]];
+                }
+                // 尝试与下边交换
+                if (r+1 < SIZE) {
+                    [grid[r][c], grid[r+1][c]] = [grid[r+1][c], grid[r][c]];
+                    if (findMatches().size > 0) { [grid[r][c], grid[r+1][c]] = [grid[r+1][c], grid[r][c]]; return true; }
+                    [grid[r][c], grid[r+1][c]] = [grid[r+1][c], grid[r][c]];
+                }
+            }
+            return false;
+        }
+
+        function checkGameOver() {
+            if (!hasValidMoves()) {
+                setTimeout(() => {
+                    updateBest();
+                    document.getElementById('endScore').textContent = score;
+                    document.getElementById('endOverlay').style.display = 'block';
+                }, 500);
+            }
         }
 
         function render() {

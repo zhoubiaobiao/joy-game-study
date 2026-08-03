@@ -472,8 +472,9 @@
             // 弹球柱
             for (const b of bumpers) {
                 // 光晕
-                const glowAlpha = b.hit > 0 ? 0.6 : 0.15;
-                ctx.fillStyle = b.glow.replace('44', Math.floor(glowAlpha * 255).toString(16).padStart(2, '0'));
+                const glowAlpha = b.hit > 0 ? 0.55 : 0.12;
+                const glowHex = Math.floor(glowAlpha*255).toString(16).padStart(2,'0');
+                ctx.fillStyle = b.glow.replace(/[0-9a-fA-F]{2}$/, glowHex);
                 ctx.beginPath();
                 ctx.arc(b.x, b.y, b.r + 8, 0, Math.PI * 2);
                 ctx.fill();
