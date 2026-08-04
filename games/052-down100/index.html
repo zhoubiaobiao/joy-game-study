@@ -110,22 +110,22 @@
                     const screenY = p.y - scrollY;
                     if (screenY < -20 || screenY > H + 20 || p.broken) continue;
                     const px = p.x, pw = p.w, ph = p.h;
-                    // Check if player feet land on platform
+                    // Check if player feet land on platform (use world coords)
                     if (player.x + player.w/2 > px && player.x - player.w/2 < px + pw &&
-                        player.y + player.h/2 >= screenY && player.y - player.h/2 < screenY + ph &&
-                        player.y + player.h/2 - player.vy <= screenY + 5) {
+                        player.y + player.h/2 >= p.y && player.y - player.h/2 < p.y + ph &&
+                        player.y + player.h/2 - player.vy <= p.y + 5) {
                         if (p.type === 'fragile') {
                             p.broken = true;
                             for (let i = 0; i < 6; i++) particles.push({ x: px + Math.random()*pw, y: screenY, vx: (Math.random()-0.5)*2, vy: -1-Math.random()*2, life: 12, color: '#ff4444' });
                             player.vy = -2;
                         } else if (p.type === 'bounce') {
                             player.vy = -8;
-                            player.y = screenY - player.h/2;
+                            player.y = p.y - player.h/2;
                             p.bounceAnim = 5;
-                            for (let i = 0; i < 4; i++) particles.push({ x: player.x, y: screenY, vx: (Math.random()-0.5)*2, vy: -3, life: 10, color: '#44aaff' });
+                            for (let i = 0; i < 4; i++) particles.push({ x: player.x, y: p.y, vx: (Math.random()-0.5)*2, vy: -3, life: 10, color: '#44aaff' });
                         } else {
                             player.vy = 0;
-                            player.y = screenY - player.h/2;
+                            player.y = p.y - player.h/2;
                             if (p.type === 'speed') {
                                 speed += 0.8; speedBoosted = true;
                             }
