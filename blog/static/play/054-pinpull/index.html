@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>054 - 抽针解谜</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 380px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🧷 抽针解谜 — #054</h1>
+    <div class="top-bar">
+        <span>🎯 关卡 <span id="level">1</span></span>
+        <span>⭐ <span id="score">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 点击针拔出 | 绿色针=安全 | 红色针=危险(拔出失败) | 按正确顺序拔针解救小球/钥匙</div>
+    <div class="overlay" id="endOverlay">
+        <h2 id="endTitle">🎉 完成！</h2>
+        <p>得分：<strong id="endScore">0</strong></p>
+        <button onclick="nextLevel()">▶ 下一关</button>&nbsp;<button onclick="newGame()">🔄 重新开始</button>
+    </div>
+    <div class="overlay" id="failOverlay">
+        <h2>💥 失败了！</h2>
+        <p id="failMsg">拔错了针！</p>
+        <button onclick="retryLevel()">🔄 重试本关</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, pins, balls, level, score, bestScore, gameOver, animId;
+        let levelCleared, targets, pulledPins, failTimer, dangerTriggered;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 380);
+            W = maxW; H = Math.floor(W * 1.25);
+            canvas.width = W; canvas.height = H;
+        }
+
+        // Level designs
+        const LEVELS = [
+            // Level 1: Tutorial - 2 pins, pull green first
+            {
+                pins: [
+                    { x: 0.3, y: 0.55, type: 'safe', desc: '安全针' },
+                    { x: 0.7, y: 0.55, type: 'danger', desc: '危险针' },
+                ],
+                ball: { x: 0.5, y: 0.25, target: { x: 0.5, y: 0.8 } },
+                name: '入门 - 拔绿色针'
+            },
+            // Level 2: 3 pins in order
+            {
+                pins: [
+                    { x: 0.25, y: 0.5, type: 'safe' },
+                    { x: 0.5, y: 0.55, type: 'danger' },
+                    { x: 0.75, y: 0.5, type: 'safe' },
+                ],
+                ball: { x: 0.5, y: 0.2, target: { x: 0.5, y: 0.85 } },
+                name: '两侧安全针'
+            },
+            // Level 3: keys and treasures
+            {
+                pins: [
+                    { x: 0.3, y: 0.45, type: 'safe' },
+                    { x: 0.7, y: 0.45, type: 'danger' },
+                    { x: 0.5, y: 0.65, type: 'safe' },
+                ],
+                ball: { x: 0.5, y: 0.15, target: { x: 0.5, y: 0.9 } },
+                name: '三针迷宫'
+            },
+            // Level 4: multiple balls
+            {
+                pins: [
+                    { x: 0.2, y: 0.5, type: 'safe' },
+                    { x: 0.4, y: 0.55, type: 'danger' },
+                    { x: 0.6, y: 0.5, type: 'safe' },
+                    { x: 0.8, y: 0.55, type: 'danger' },
+                ],
+                balls: [
+                    { x: 0.3, y: 0.2, target: { x: 0.3, y: 0.85 } },
+                    { x: 0.7, y: 0.2, target: { x: 0.7, y: 0.85 } },
+                ],
+                name: '双重挑战'
+            },
+            // Level 5: complex
+            {
+                pins: [
+                    { x: 0.2, y: 0.4, type: 'safe' },
+                    { x: 0.4, y: 0.35, type: 'danger' },
+                    { x: 0.6, y: 0.4, type: 'safe' },
+                    { x: 0.8, y: 0.35, type: 'danger' },
+                    { x: 0.5, y: 0.6, type: 'safe' },
+                ],
+                ball: { x: 0.5, y: 0.1, target: { x: 0.5, y: 0.9 } },
+                name: '终极挑战'
+            },
+        ];
+
+        function getLevelData() {
+            const idx = (level - 1) % LEVELS.length;
+            return LEVELS[idx];
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            if (failTimer) { clearTimeout(failTimer); failTimer = null; }
+            resize();
+            level = 1; score = 0; gameOver = false; levelCleared = false;
+            bestScore = parseInt(localStorage.getItem('pinpull-best') || '0');
+            document.getElementById('level').textContent = '1';
+            document.getElementById('score').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('failOverlay').style.display = 'none';
+            loadLevel();
+            loop();
+        }
+
+        function loadLevel() {
+            const data = getLevelData();
+            pulledPins = [];
+            failTimer = null; dangerTriggered = false;
+            pins = data.pins.map((p, i) => ({
+                x: p.x * W, y: p.y * H, type: p.type, idx: i,
+                pulled: false, pulling: false, pullProgress: 0,
+                glow: 0
+            }));
+            balls = (data.balls || [data.ball]).map(b => ({
+                x: b.x * W, y: b.y * H, r: 12,
+                targetX: b.target.x * W, targetY: b.target.y * H,
+                reached: false, falling: false, vy: 0
+            }));
+            targets = balls.map(b => ({ x: b.targetX, y: b.targetY, reached: false }));
+            document.getElementById('level').textContent = level;
+            document.getElementById('endOverlay').style.display = 'none';
+            document.getElementById('failOverlay').style.display = 'none';
+            levelCleared = false;
+        }
+
+        function pullPin(idx) {
+            if (gameOver || levelCleared) return;
+            const pin = pins[idx];
+            if (!pin || pin.pulled || pin.pulling) return;
+            pin.pulling = true;
+            pin.pullProgress = 0;
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Animate pulling pins
+            for (const pin of pins) {
+                if (pin.pulling) {
+                    pin.pullProgress += 0.04;
+                    if (pin.pullProgress >= 1) {
+                        pin.pulled = true;
+                        pin.pulling = false;
+                        // Check if this pin was dangerous
+                        if (pin.type === 'danger') {
+                            // Fail! Balls fall
+                            dangerTriggered = true;
+                            for (const b of balls) {
+                                if (!b.reached) { b.falling = true; b.vy = 0; b.dangerFall = true; }
+                            }
+                            failTimer = setTimeout(() => {
+                                document.getElementById('failMsg').textContent = '拔了危险针！小球掉落了！';
+                                document.getElementById('failOverlay').style.display = 'block';
+                                gameOver = true;
+                            }, 400);
+                        } else {
+                            pulledPins.push(pin.idx);
+                            // Check if all safe pins pulled -> balls fall
+                            const allSafePulled = pins.filter(p => p.type === 'safe').every(p => p.pulled);
+                            if (allSafePulled) {
+                                for (const b of balls) {
+                                    if (!b.reached) { b.falling = true; b.vy = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                pin.glow += 0.03;
+            }
+
+            // Animate falling balls
+            let allReached = balls.length > 0;
+            for (const b of balls) {
+                if (b.falling && !b.reached) {
+                    b.vy += 0.3;
+                    b.y += b.vy;
+                    // Check if reached target (only score if not in danger mode)
+                    if (!dangerTriggered && Math.hypot(b.x - b.targetX, b.y - b.targetY) < 25) {
+                        b.x = b.targetX; b.y = b.targetY;
+                        b.reached = true;
+                        score += 100 * level;
+                        document.getElementById('score').textContent = score;
+                        if (score > bestScore) { bestScore = score; localStorage.setItem('pinpull-best', bestScore); document.getElementById('best').textContent = bestScore; }
+                    }
+                    // Fell off screen
+                    if (b.y > H + 40 && !b.reached) {
+                        b.reached = true; b.lost = true; // mark as lost
+                    }
+                }
+                if (!b.reached && b.falling) allReached = false;
+                if (!b.reached && !b.falling) allReached = false;
+            }
+
+            // Check level complete (only balls that reached target, not lost)
+            if (allReached && balls.some(b => b.reached && !b.lost)) {
+                levelCleared = true;
+                document.getElementById('endTitle').textContent = '🎉 第' + level + '关通过！';
+                document.getElementById('endScore').textContent = score;
+                document.getElementById('endOverlay').style.display = 'block';
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Background
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            bgGrad.addColorStop(0, '#2a1a3e'); bgGrad.addColorStop(1, '#1a1a2e');
+            ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+            // Walls/container
+            ctx.strokeStyle = '#555'; ctx.lineWidth = 3;
+            ctx.strokeRect(10, 20, W - 20, H - 40);
+
+            // Level name
+            ctx.fillStyle = '#aaa'; ctx.font = '13px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(getLevelData().name, W/2, H - 10);
+            ctx.textAlign = 'start';
+
+            // Target zones
+            for (const t of targets) {
+                ctx.fillStyle = 'rgba(68,255,68,0.2)'; ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#44ff44'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+                ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI*2); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#44ff44'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('🏁', t.x, t.y + 4);
+                ctx.textAlign = 'start';
+            }
+
+            // Pins
+            for (const pin of pins) {
+                if (pin.pulled) continue;
+                const px = pin.x, py = pin.y;
+                const pullOff = pin.pulling ? pin.pullProgress * 60 : 0;
+                // Pin body (horizontal)
+                const pinW = 40, pinH = 10;
+                // Glow
+                const glowAlpha = 0.3 + Math.sin(pin.glow) * 0.15;
+                ctx.fillStyle = pin.type === 'safe' ? `rgba(68,255,68,${glowAlpha})` : `rgba(255,68,68,${glowAlpha})`;
+                ctx.fillRect(px - pinW/2 - pullOff - 3, py - pinH/2 - 3, pinW + 6, pinH + 6);
+                // Pin body
+                const grad = ctx.createLinearGradient(px, py - pinH/2, px, py + pinH/2);
+                grad.addColorStop(0, pin.type === 'safe' ? '#88ff88' : '#ff8888');
+                grad.addColorStop(0.5, pin.type === 'safe' ? '#44cc44' : '#cc4444');
+                grad.addColorStop(1, pin.type === 'safe' ? '#228822' : '#882222');
+                ctx.fillStyle = grad;
+                ctx.fillRect(px - pinW/2 - pullOff, py - pinH/2, pinW, pinH);
+                // Pin head (circle)
+                ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.arc(px - pinW/2 - pullOff, py, pinH * 0.9, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = pin.type === 'safe' ? '#44ff44' : '#ff4444';
+                ctx.beginPath(); ctx.arc(px - pinW/2 - pullOff, py, pinH * 0.5, 0, Math.PI*2); ctx.fill();
+                // Label
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText(pin.type === 'safe' ? '✓' : '✗', px - pinW/2 - pullOff, py + pinH + 12);
+                ctx.textAlign = 'start';
+            }
+
+            // Balls
+            for (const b of balls) {
+                if (b.reached) continue;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(b.x + 2, b.y + 2, b.r, 0, Math.PI*2); ctx.fill();
+                // Body
+                const ballGrad = ctx.createRadialGradient(b.x - 3, b.y - 3, 2, b.x, b.y, b.r);
+                ballGrad.addColorStop(0, '#ffd700'); ballGrad.addColorStop(1, '#cc8800');
+                ctx.fillStyle = ballGrad;
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(b.x - 3, b.y - 4, 4, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Status
+            const safePulled = pins.filter(p => p.type === 'safe' && p.pulled).length;
+            const safeTotal = pins.filter(p => p.type === 'safe').length;
+            ctx.fillStyle = '#aaa'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(`安全针: ${safePulled}/${safeTotal}`, W - 15, 38);
+            ctx.textAlign = 'start';
+        }
+
+        function nextLevel() {
+            level++;
+            document.getElementById('endOverlay').style.display = 'none';
+            gameOver = false;
+            loadLevel();
+        }
+
+        function retryLevel() {
+            if (failTimer) { clearTimeout(failTimer); failTimer = null; }
+            document.getElementById('failOverlay').style.display = 'none';
+            gameOver = false;
+            levelCleared = false;
+            dangerTriggered = false;
+            loadLevel();
+            loop();
+        }
+
+        function loop() { update(); draw(); if (!gameOver || levelCleared) animId = requestAnimationFrame(loop); }
+
+        canvas.addEventListener('click', e => {
+            if (gameOver || levelCleared) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (W / rect.width);
+            const my = (e.clientY - rect.top) * (H / rect.height);
+            // Check if clicked near a pin
+            for (const pin of pins) {
+                if (pin.pulled || pin.pulling) continue;
+                if (Math.abs(mx - pin.x) < 35 && Math.abs(my - pin.y) < 25) {
+                    pullPin(pin.idx);
+                    break;
+                }
+            }
+        });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (gameOver || levelCleared) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            const my = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            for (const pin of pins) {
+                if (pin.pulled || pin.pulling) continue;
+                if (Math.abs(mx - pin.x) < 35 && Math.abs(my - pin.y) < 25) {
+                    pullPin(pin.idx);
+                    break;
+                }
+            }
+        });
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

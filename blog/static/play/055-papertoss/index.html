@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>055 - 纸上投篮</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #f5f0e8; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎯 纸上投篮 — #055</h1>
+    <div class="top-bar">
+        <span>🏀 进球 <span id="score">0</span>/10</span>
+        <span>🎯 连中 <span id="streak">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 从纸团拖拽瞄准垃圾桶，松开发射 | 🌬️ 风向影响轨迹 | 10次投篮看命中率</div>
+    <div class="overlay" id="endOverlay">
+        <h2 id="endTitle">🎯 投篮结束！</h2>
+        <p>命中：<strong id="endScore">0</strong> / 10 | 最佳连中：<strong id="endStreak">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, paper, basket, score, streak, maxStreak, bestScore, gameOver, animId;
+        let shots, wind, dragging, dragStart, particles, pendingTimer;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.3);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+            resize();
+            score = 0; streak = 0; maxStreak = 0; gameOver = false; shots = 0;
+            dragging = false; particles = [];
+            bestScore = parseInt(localStorage.getItem('papertoss-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('streak').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            resetShot();
+            loop();
+        }
+
+        function resetShot() {
+            paper = { x: W/2, y: H - 50, r: 10, vx: 0, vy: 0, flying: false, landed: false };
+            // Random basket position
+            const bx = W * 0.25 + Math.random() * W * 0.5;
+            const by = H * 0.12 + Math.random() * H * 0.25;
+            basket = { x: bx, y: by, w: 55, h: 45, rimY: by, openingW: 45 };
+            // Random wind
+            wind = { vx: (Math.random() - 0.5) * 1.2, vy: (Math.random() - 0.3) * 0.4, strength: Math.floor(Math.random() * 4) };
+            dragging = false; dragStart = null;
+            particles = [];
+        }
+
+        function update() {
+            if (gameOver) return;
+            // Flying paper
+            if (paper.flying) {
+                // Gravity
+                paper.vy += 0.28;
+                // Wind
+                paper.vx += wind.vx * 0.02;
+                paper.vy += wind.vy * 0.02;
+                // Move
+                paper.x += paper.vx;
+                paper.y += paper.vy;
+                // Rotation (visual)
+                paper.rot = (paper.rot || 0) + (paper.vx * 0.05);
+                // Trail
+                if (Math.random() < 0.5) {
+                    particles.push({ x: paper.x, y: paper.y, vx: (Math.random()-0.5)*0.5, vy: (Math.random()-0.5)*0.5, life: 8, color: '#ddd' });
+                }
+                // Check basket
+                const bx = basket.x, by = basket.y;
+                const rimLeft = bx - basket.openingW/2, rimRight = bx + basket.openingW/2;
+                // Paper entering basket from above
+                if (!paper.scored && paper.vy > 0 && paper.y >= by - 8 && paper.y <= by + 10 &&
+                    paper.x > rimLeft + 8 && paper.x < rimRight - 8 &&
+                    paper.y - paper.vy < by - 5) {
+                    paper.scored = true;
+                    score++; streak++;
+                    if (streak > maxStreak) maxStreak = streak;
+                    shots++;
+                    document.getElementById('score').textContent = score;
+                    document.getElementById('streak').textContent = streak;
+                    for (let i = 0; i < 12; i++) {
+                        particles.push({ x: paper.x, y: paper.y, vx: (Math.random()-0.5)*4, vy: -2-Math.random()*4, life: 20, color: '#ffd700' });
+                    }
+                    if (shots >= 10) { pendingTimer = setTimeout(endGame, 600); return; }
+                    pendingTimer = setTimeout(resetShot, 600);
+                }
+                // Hit rim and bounce
+                if (!paper.scored && paper.y >= by - 5 && paper.y <= by + 5 &&
+                    Math.abs(paper.x - bx) < basket.openingW/2 + 8 &&
+                    Math.abs(paper.x - bx) > basket.openingW/2 - 5) {
+                    paper.vx = (paper.x - bx) * 0.3;
+                    paper.vy = -Math.abs(paper.vy) * 0.5;
+                    canMissed++;
+                    paper.rimHit = true;
+                }
+                // Landed
+                if (paper.y > H + 30 || paper.x < -40 || paper.x > W + 40) {
+                    if (!paper.scored) {
+                        streak = 0;
+                        shots++;
+                        document.getElementById('streak').textContent = '0';
+                        if (shots >= 10) { pendingTimer = setTimeout(endGame, 600); return; }
+                        pendingTimer = setTimeout(resetShot, 400);
+                    }
+                    paper.flying = false;
+                }
+            }
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Office background
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            bgGrad.addColorStop(0, '#f0ebe3'); bgGrad.addColorStop(1, '#e8e0d5');
+            ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+            // Desk surface
+            ctx.fillStyle = '#8B7355'; ctx.fillRect(0, H - 30, W, 30);
+            ctx.fillStyle = '#A0896C'; ctx.fillRect(0, H - 30, W, 5);
+
+            // Wind indicator
+            const windStr = wind.strength <= 1 ? '微风' : wind.strength <= 2 ? '中风' : '大风';
+            const windArrow = wind.vx > 0.2 ? '→' : wind.vx < -0.2 ? '←' : '·';
+            ctx.fillStyle = '#666'; ctx.font = '13px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(`🌬️ ${windStr} ${windArrow}`, W - 15, 25);
+            ctx.textAlign = 'start';
+
+            // Basket
+            const bx = basket.x, by = basket.y;
+            // Basket body (trapezoid)
+            ctx.fillStyle = '#555'; ctx.beginPath();
+            ctx.moveTo(bx - basket.w/2, by + basket.h);
+            ctx.lineTo(bx - basket.openingW/2 - 4, by);
+            ctx.lineTo(bx + basket.openingW/2 + 4, by);
+            ctx.lineTo(bx + basket.w/2, by + basket.h);
+            ctx.closePath(); ctx.fill();
+            // Basket rim
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(bx - basket.openingW/2 - 2, by - 2);
+            ctx.lineTo(bx + basket.openingW/2 + 2, by - 2); ctx.stroke();
+            ctx.strokeStyle = '#777'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(bx - basket.openingW/2 - 2, by - 2);
+            ctx.lineTo(bx + basket.openingW/2 + 2, by - 2); ctx.stroke();
+            // Rim circles
+            ctx.fillStyle = '#666'; ctx.beginPath(); ctx.arc(bx - basket.openingW/2, by - 1, 4, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(bx + basket.openingW/2, by - 1, 4, 0, Math.PI*2); ctx.fill();
+            // Net lines
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+            for (let i = -2; i <= 2; i++) {
+                const nx = bx + i * basket.openingW/6;
+                ctx.beginPath(); ctx.moveTo(nx, by); ctx.lineTo(nx + (i * 3), by + basket.h * 0.6); ctx.stroke();
+            }
+
+            // Trajectory line when dragging
+            if (dragging && dragStart && !paper.flying) {
+                const dx = dragStart.x - paper.x;
+                const dy = dragStart.y - paper.y;
+                // Draw dotted trajectory preview
+                ctx.setLineDash([4, 6]);
+                ctx.strokeStyle = 'rgba(0,180,255,0.4)'; ctx.lineWidth = 2;
+                ctx.beginPath();
+                let px = paper.x, py = paper.y;
+                let pvx = dx * 0.12, pvy = dy * 0.12;
+                ctx.moveTo(px, py);
+                for (let i = 0; i < 25; i++) {
+                    pvx += wind.vx * 0.02; pvy += 0.28 + wind.vy * 0.02;
+                    px += pvx; py += pvy;
+                    ctx.lineTo(px, py);
+                }
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = p.color === '#ffd700' ? `rgba(255,215,0,${p.life/20})` : `rgba(200,200,200,${p.life/8})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.color === '#ffd700' ? 2.5 : 1.5, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Paper
+            if (!paper.scored || !paper.flying) {
+                ctx.save(); ctx.translate(paper.x, paper.y);
+                if (paper.rot) ctx.rotate(paper.rot);
+                // Paper shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.beginPath(); ctx.arc(3, 3, paper.r, 0, Math.PI*2); ctx.fill();
+                // Paper body (crumpled look)
+                ctx.fillStyle = '#fafafa'; ctx.beginPath(); ctx.arc(0, 0, paper.r, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#f0f0f0';
+                ctx.beginPath(); ctx.arc(-2, -2, paper.r*0.4, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(0, 0, paper.r, 0, Math.PI*2); ctx.stroke();
+                ctx.restore();
+            }
+
+            // Drag indicator
+            if (dragging && dragStart) {
+                ctx.strokeStyle = '#00d4ff'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(paper.x, paper.y); ctx.lineTo(dragStart.x, dragStart.y); ctx.stroke();
+                ctx.fillStyle = '#00d4ff'; ctx.beginPath(); ctx.arc(dragStart.x, dragStart.y, 5, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Shot counter
+            ctx.fillStyle = '#333'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(`投篮 ${shots}/10`, W/2, 22);
+            ctx.textAlign = 'start';
+
+            // Instructions
+            if (!paper.flying && !dragging) {
+                ctx.fillStyle = '#999'; ctx.font = '12px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('从纸团拖拽瞄准，松开发射', W/2, H - 45);
+                ctx.textAlign = 'start';
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+            const totalScore = score * 10;
+            document.getElementById('endTitle').textContent = score >= 7 ? '🏆 神射手！' : score >= 4 ? '👍 不错！' : '💪 继续加油！';
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endStreak').textContent = maxStreak;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (totalScore > bestScore) { bestScore = totalScore; localStorage.setItem('papertoss-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver || shots < 10) animId = requestAnimationFrame(loop); }
+
+        // Drag controls
+        canvas.addEventListener('mousedown', e => {
+            if (gameOver || paper.flying || paper.scored) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (W / rect.width);
+            const my = (e.clientY - rect.top) * (H / rect.height);
+            if (Math.hypot(mx - paper.x, my - paper.y) < 30) {
+                dragging = true;
+                dragStart = { x: mx, y: my };
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            const rect = canvas.getBoundingClientRect();
+            dragStart.x = (e.clientX - rect.left) * (W / rect.width);
+            dragStart.y = (e.clientY - rect.top) * (H / rect.height);
+        });
+
+        canvas.addEventListener('mouseup', e => {
+            if (!dragging || !dragStart) return;
+            releaseShot();
+        });
+
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (gameOver || paper.flying || paper.scored) return;
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            const my = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            if (Math.hypot(mx - paper.x, my - paper.y) < 35) {
+                dragging = true;
+                dragStart = { x: mx, y: my };
+            }
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!dragging) return;
+            const rect = canvas.getBoundingClientRect();
+            dragStart.x = (e.touches[0].clientX - rect.left) * (W / rect.width);
+            dragStart.y = (e.touches[0].clientY - rect.top) * (H / rect.height);
+        });
+
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            if (!dragging || !dragStart) return;
+            releaseShot();
+        });
+
+        function releaseShot() {
+            const dx = dragStart.x - paper.x;
+            const dy = dragStart.y - paper.y;
+            const power = Math.min(12, Math.hypot(dx, dy) * 0.08);
+            const angle = Math.atan2(dy, dx);
+            paper.vx = Math.cos(angle) * power;
+            paper.vy = Math.sin(angle) * power;
+            paper.flying = true;
+            paper.scored = false;
+            paper.rot = 0;
+            paper.rimHit = false;
+            dragging = false; dragStart = null;
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

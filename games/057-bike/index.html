@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>057 - 平衡单车</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🚲 平衡单车 — #057</h1>
+    <div class="top-bar">
+        <span>📏 <span id="score">0</span>m</span>
+        <span>🪙 <span id="coins">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 ←→/AD 保持平衡 | 倾斜角度过大则摔倒 | 收集金币 | 避开坑洞和石头</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 摔倒了！</h2>
+        <p>距离：<strong id="endScore">0</strong>m | 金币：<strong id="endCoins">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, bike, ground, obstacles, coins, score, coinCount, bestScore, gameOver, animId;
+        let speed, camX, keys, particles;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 0.75);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; coinCount = 0; gameOver = false; speed = 2; camX = 0;
+            keys = {}; particles = [];
+            bestScore = parseInt(localStorage.getItem('bike-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('coins').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            bike = { x: W * 0.3, y: H * 0.5, angle: 0, vy: 0, wheelR: 10, onGround: true };
+            // Generate ground segments
+            ground = [];
+            let gx = 0;
+            while (gx < 5000) {
+                const gy = H * 0.65 + Math.sin(gx * 0.008) * 30 + Math.sin(gx * 0.02) * 15;
+                ground.push({ x: gx, y: gy });
+                gx += 15;
+            }
+            // Generate obstacles and coins
+            obstacles = []; coins = [];
+            for (let i = 200; i < 4800; i += 80 + Math.random() * 120) {
+                if (Math.random() < 0.4) {
+                    obstacles.push({ x: i, y: getGroundY(i) - 18, w: 20 + Math.random() * 30, h: 20 + Math.random() * 20, type: Math.random() < 0.3 ? 'hole' : 'rock' });
+                }
+                if (Math.random() < 0.5) {
+                    coins.push({ x: i + 40, y: getGroundY(i) - 40 - Math.random() * 50, r: 8, collected: false, sparkle: Math.random() * Math.PI * 2 });
+                }
+            }
+            loop();
+        }
+
+        function getGroundY(x) {
+            // Interpolate ground height
+            const idx = Math.floor(x / 15);
+            if (idx < 0 || idx >= ground.length - 1) return H * 0.65;
+            const g1 = ground[idx], g2 = ground[idx + 1];
+            const t = (x - g1.x) / 15;
+            return g1.y + (g2.y - g1.y) * t;
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Input
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) bike.angle -= 0.025;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) bike.angle += 0.025;
+
+            // Auto-balance (bike wants to stay upright)
+            bike.angle *= 0.995;
+
+            // Gravity on angle
+            bike.vy += Math.sin(bike.angle) * 0.3;
+
+            // Move
+            bike.y += bike.vy;
+            if (!bike.onGround) bike.vy += 0.2; // extra gravity in air
+
+            // Ground check
+            const groundY = getGroundY(bike.x);
+            const bikeBottom = bike.y + bike.wheelR;
+            bike.onGround = false;
+            if (bikeBottom >= groundY) {
+                bike.y = groundY - bike.wheelR;
+                bike.vy = 0;
+                bike.onGround = true;
+            }
+            // Fall into hole
+            for (const o of obstacles) {
+                if (o.type === 'hole' && bike.x > o.x && bike.x < o.x + o.w && bikeBottom >= o.y + o.h - 5) {
+                    bike.vy += 1; bike.onGround = false;
+                }
+                // Rock collision
+                if (o.type === 'rock' && bike.x + bike.wheelR > o.x && bike.x - bike.wheelR < o.x + o.w &&
+                    bikeBottom >= o.y && bikeBottom - bike.vy < o.y) {
+                    bike.vy = -3; bike.onGround = false;
+                    for (let i = 0; i < 8; i++) particles.push({ x: bike.x, y: bike.y, vx: (Math.random()-0.5)*3, vy: -2-Math.random()*3, life: 15, color: '#ff4444' });
+                }
+            }
+
+            // Coin collection
+            for (const c of coins) {
+                if (c.collected) continue;
+                if (Math.hypot(bike.x - c.x, bike.y - c.y) < bike.wheelR + c.r + 5) {
+                    c.collected = true;
+                    coinCount++;
+                    document.getElementById('coins').textContent = coinCount;
+                    for (let i = 0; i < 5; i++) particles.push({ x: c.x, y: c.y, vx: (Math.random()-0.5)*2, vy: -2-Math.random()*2, life: 10, color: '#ffd700' });
+                }
+            }
+
+            // Auto-scroll
+            bike.x += speed;
+            camX = bike.x - W * 0.3;
+            speed = 2 + Math.floor(score / 300) * 0.3;
+
+            // Score
+            const newScore = Math.floor(bike.x / 10);
+            if (newScore > score) { score = newScore; document.getElementById('score').textContent = score; }
+
+            // Game over conditions
+            if (Math.abs(bike.angle) > Math.PI / 2.5) { endGame(); return; }
+            if (bike.y > H + 50) { endGame(); return; }
+
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+
+            // Spawn more content ahead
+            const lastObs = obstacles.length > 0 ? Math.max(...obstacles.map(o => o.x)) : 0;
+            if (lastObs < bike.x + 600) {
+                const nx = lastObs + 80 + Math.random() * 120;
+                if (Math.random() < 0.4) {
+                    obstacles.push({ x: nx, y: getGroundY(nx) - 18, w: 20 + Math.random() * 30, h: 20 + Math.random() * 20, type: Math.random() < 0.3 ? 'hole' : 'rock' });
+                }
+                if (Math.random() < 0.5) {
+                    coins.push({ x: nx + 40, y: getGroundY(nx) - 40 - Math.random() * 60, r: 8, collected: false, sparkle: Math.random() * Math.PI * 2 });
+                }
+            }
+            // Clean old objects - also clean collected coins that are far behind
+            const cleanX = bike.x - 300;
+            obstacles = obstacles.filter(o => o.x > cleanX);
+            coins = coins.filter(c => c.x > cleanX && !c.collected);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+            skyGrad.addColorStop(0, '#4a90d9'); skyGrad.addColorStop(1, '#87CEEB');
+            ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, H);
+
+            ctx.save(); ctx.translate(-camX, 0);
+
+            // Ground
+            ctx.fillStyle = '#5a9a3a'; ctx.beginPath();
+            const startX = Math.max(0, Math.floor(camX / 15) * 15);
+            ctx.moveTo(startX - 20, H + 20);
+            for (let gx = startX; gx < camX + W + 30; gx += 15) {
+                const gy = getGroundY(gx);
+                ctx.lineTo(gx, gy);
+            }
+            ctx.lineTo(camX + W + 50, H + 20);
+            ctx.closePath(); ctx.fill();
+            // Ground surface
+            ctx.strokeStyle = '#3a7a2a'; ctx.lineWidth = 3; ctx.beginPath();
+            for (let gx = startX; gx < camX + W + 30; gx += 15) {
+                const gy = getGroundY(gx);
+                gx === startX ? ctx.moveTo(gx, gy) : ctx.lineTo(gx, gy);
+            }
+            ctx.stroke();
+
+            // Obstacles
+            for (const o of obstacles) {
+                if (o.x < camX - 50 || o.x > camX + W + 50) continue;
+                if (o.type === 'rock') {
+                    ctx.fillStyle = '#777'; ctx.beginPath();
+                    ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + o.w, o.y);
+                    ctx.lineTo(o.x + o.w * 0.7, o.y - o.h); ctx.lineTo(o.x + o.w * 0.3, o.y - o.h);
+                    ctx.closePath(); ctx.fill();
+                    ctx.fillStyle = '#999'; ctx.beginPath(); ctx.arc(o.x + o.w/2, o.y - o.h, o.w*0.3, 0, Math.PI*2); ctx.fill();
+                } else if (o.type === 'hole') {
+                    ctx.fillStyle = '#1a0a00'; ctx.fillRect(o.x, o.y - 2, o.w, o.h);
+                    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(o.x + o.w/2, o.y - 2, o.w/2, o.h/4, 0, 0, Math.PI*2); ctx.fill();
+                }
+            }
+
+            // Coins
+            for (const c of coins) {
+                if (c.collected || c.x < camX - 50 || c.x > camX + W + 50) continue;
+                c.sparkle += 0.05;
+                const glow = 0.6 + Math.sin(c.sparkle) * 0.3;
+                ctx.fillStyle = `rgba(255,215,0,${glow})`; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r * 0.6, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Segoe UI"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('$', c.x, c.y);
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+            }
+
+            // Particles
+            for (const p of particles) {
+                const color = p.color === '#ffd700' ? '255,215,0' : '255,68,68';
+                ctx.fillStyle = `rgba(${color},${p.life/15})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Bike
+            ctx.save(); ctx.translate(bike.x, bike.y);
+            ctx.rotate(bike.angle);
+            // Frame
+            ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(0, 0); ctx.lineTo(15, -10); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -25); ctx.stroke();
+            // Seat
+            ctx.fillStyle = '#333'; ctx.fillRect(-6, -28, 12, 5);
+            // Handlebars
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(12, -12); ctx.lineTo(10, -20); ctx.stroke();
+            // Wheels
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(-15, 0, bike.wheelR, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(15, 0, bike.wheelR, 0, Math.PI*2); ctx.stroke();
+            // Spokes
+            for (let i = 0; i < 4; i++) {
+                const a = i * Math.PI / 2 + score * 0.05;
+                ctx.beginPath(); ctx.moveTo(-15, 0); ctx.lineTo(-15 + Math.cos(a)*bike.wheelR, Math.sin(a)*bike.wheelR); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(15 + Math.cos(a+0.5)*bike.wheelR, Math.sin(a+0.5)*bike.wheelR); ctx.stroke();
+            }
+            // Rider (simple stick figure)
+            ctx.strokeStyle = '#ffaa66'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(0, -33, 6, 0, Math.PI*2); ctx.stroke(); // head
+            ctx.beginPath(); ctx.moveTo(0, -27); ctx.lineTo(0, -18); ctx.stroke(); // body
+            ctx.beginPath(); ctx.moveTo(0, -22); ctx.lineTo(-8, -12); ctx.stroke(); // arm
+            ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(7, -8); ctx.stroke(); // leg
+
+            ctx.restore();
+            ctx.restore(); // camera
+
+            // Angle indicator
+            const angleDeg = Math.round(bike.angle * 180 / Math.PI);
+            ctx.fillStyle = Math.abs(bike.angle) > 1 ? '#ff4444' : '#fff';
+            ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('倾斜: ' + angleDeg + '°', W/2, 20);
+            // Speed
+            ctx.fillText('速度: ' + speed.toFixed(1) + ' m/s', W/2, 38);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endCoins').textContent = coinCount;
+            document.getElementById('endOverlay').style.display = 'block';
+            const totalScore = score + coinCount * 5;
+            if (totalScore > bestScore) { bestScore = totalScore; localStorage.setItem('bike-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight','a','d','A','D'].includes(e.key)) e.preventDefault(); });
+        document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // Touch: tilt based on where you tap
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); keys['ArrowLeft'] = false; keys['ArrowRight'] = false; });
+
+        function handleTouch(e) {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const tx = (e.touches[0].clientX - rect.left) / rect.width;
+            keys['ArrowLeft'] = tx < 0.35;
+            keys['ArrowRight'] = tx > 0.65;
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

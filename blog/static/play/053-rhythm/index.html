@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>053 - 节奏大师</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #000; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .lane-btns { display: flex; gap: 4px; margin-top: 6px; width: 100%; max-width: 360px; }
+        .lane-btn { flex: 1; padding: 14px 4px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 0.9em; -webkit-tap-highlight-color: transparent; text-align: center; }
+        .lane-btn:active { border-color: #00d4ff; background: #00d4ff22; }
+        .lane-btn.hit { border-color: #ffd700; background: #ffd70033; transition: 0.05s; }
+    </style>
+</head>
+<body>
+    <h1>🎵 节奏大师 — #053</h1>
+    <div class="top-bar">
+        <span>⭐ <span id="score">0</span></span>
+        <span>🔥 <span id="combo">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="lane-btns">
+        <button class="lane-btn" id="btn0">D</button>
+        <button class="lane-btn" id="btn1">F</button>
+        <button class="lane-btn" id="btn2">J</button>
+        <button class="lane-btn" id="btn3">K</button>
+    </div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 D/F/J/K 键或点击按钮 | 音符落到判定线时按下 | Perfect +30 | Great +20 | Good +10 | Miss 断连击</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🎵 演奏结束！</h2>
+        <p>得分：<strong id="endScore">0</strong> | 最高连击：<strong id="endCombo">0</strong></p>
+        <p style="font-size:0.8em;color:#aaa;">Perfect: <span id="endPerfect">0</span> | Great: <span id="endGreat">0</span> | Good: <span id="endGood">0</span> | Miss: <span id="endMiss">0</span></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, notes, score, combo, maxCombo, bestScore, gameOver, animId;
+        let perfects, greats, goods, misses, noteSpeed, spawnTimer, laneWidth, doubleTimer;
+        const LANES = 4;
+        const HIT_Y_RATIO = 0.82;
+        const COLORS = ['#ff4444', '#44aaff', '#ffd700', '#44ff44'];
+        const KEYS = ['d', 'f', 'j', 'k'];
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.6);
+            canvas.width = W; canvas.height = H;
+            laneWidth = W / LANES;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            if (doubleTimer) { clearTimeout(doubleTimer); doubleTimer = null; }
+            resize();
+            score = 0; combo = 0; maxCombo = 0; gameOver = false;
+            perfects = 0; greats = 0; goods = 0; misses = 0;
+            noteSpeed = 3; spawnTimer = 0;
+            bestScore = parseInt(localStorage.getItem('rhythm-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('combo').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            notes = [];
+            loop();
+        }
+
+        function spawnNote() {
+            const lane = Math.floor(Math.random() * LANES);
+            notes.push({
+                lane, x: lane * laneWidth + laneWidth / 2,
+                y: -30, speed: noteSpeed,
+                color: COLORS[lane],
+                hit: false, missed: false
+            });
+        }
+
+        function hitLane(lane) {
+            const hitY = H * HIT_Y_RATIO;
+            // Find closest unhit note in this lane
+            let bestNote = null, bestDist = Infinity;
+            for (const n of notes) {
+                if (n.lane === lane && !n.hit && !n.missed) {
+                    const dist = Math.abs(n.y - hitY);
+                    if (dist < bestDist) { bestDist = dist; bestNote = n; }
+                }
+            }
+            if (!bestNote) return;
+            const dist = Math.abs(bestNote.y - hitY);
+            bestNote.hit = true;
+            let pts, grade;
+            if (dist < 25) { pts = 30; grade = 'Perfect!'; perfects++; combo++; }
+            else if (dist < 50) { pts = 20; grade = 'Great!'; greats++; combo++; }
+            else if (dist < 80) { pts = 10; grade = 'Good'; goods++; combo = 0; }
+            else { pts = 0; grade = 'Miss'; misses++; combo = 0; }
+            score += pts * (1 + Math.floor(combo / 10));
+            if (combo > maxCombo) maxCombo = combo;
+            document.getElementById('score').textContent = score;
+            document.getElementById('combo').textContent = combo;
+            if (score > bestScore) { bestScore = score; localStorage.setItem('rhythm-best', bestScore); document.getElementById('best').textContent = bestScore; }
+            // Flash button
+            const btn = document.getElementById('btn' + lane);
+            btn.classList.add('hit');
+            setTimeout(() => btn.classList.remove('hit'), 80);
+            // Show grade text
+            bestNote.grade = grade;
+            bestNote.gradeLife = 30;
+            // Particle
+            bestNote.particles = [];
+            for (let i = 0; i < 6; i++) {
+                bestNote.particles.push({ vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 12 });
+            }
+        }
+
+        function update() {
+            if (gameOver) return;
+            // Spawn notes in patterns
+            spawnTimer++;
+            const baseInterval = Math.max(15, 45 - score / 50);
+            if (spawnTimer >= baseInterval) {
+                spawnTimer = 0;
+                spawnNote();
+                // Sometimes spawn double notes
+                if (Math.random() < 0.25) {
+                    const otherLane = (Math.floor(Math.random() * (LANES - 1)) + Math.floor(Math.random() * 2)) % LANES;
+                    doubleTimer = setTimeout(() => { if (!gameOver) spawnNote(); }, 80);
+                }
+            }
+
+            const hitY = H * HIT_Y_RATIO;
+            for (const n of notes) {
+                n.y += n.speed;
+                // Decay grade
+                if (n.gradeLife > 0) n.gradeLife--;
+                // Update particles
+                if (n.particles) {
+                    for (const p of n.particles) { p.life--; }
+                    n.particles = n.particles.filter(p => p.life > 0);
+                }
+                // Miss check
+                if (!n.hit && !n.missed && n.y > hitY + 60) {
+                    n.missed = true;
+                    misses++; combo = 0;
+                    document.getElementById('combo').textContent = '0';
+                    n.grade = 'Miss';
+                    n.gradeLife = 25;
+                }
+            }
+            // Clean old notes
+            notes = notes.filter(n => n.y < H + 60);
+
+            // End game after enough notes
+            if (notes.length === 0 && spawnTimer > 200 && score > 0) {
+                // Keep spawning new patterns
+                if (spawnTimer > 200) spawnNote();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+
+            // Lanes
+            for (let i = 0; i < LANES; i++) {
+                ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)';
+                ctx.fillRect(i * laneWidth, 0, laneWidth, H);
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(i * laneWidth, 0); ctx.lineTo(i * laneWidth, H); ctx.stroke();
+            }
+
+            // Hit zone
+            const hitY = H * HIT_Y_RATIO;
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.fillRect(0, hitY - 25, W, 50);
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, hitY); ctx.lineTo(W, hitY); ctx.stroke();
+            // Hit zone glow
+            const glowGrad = ctx.createLinearGradient(0, hitY - 25, 0, hitY + 25);
+            glowGrad.addColorStop(0, 'transparent'); glowGrad.addColorStop(0.5, 'rgba(255,255,255,0.1)'); glowGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = glowGrad; ctx.fillRect(0, hitY - 25, W, 50);
+
+            // Notes
+            for (const n of notes) {
+                if (n.hit && n.gradeLife <= 0) continue;
+                const alpha = n.hit ? n.gradeLife / 30 : n.missed ? n.gradeLife / 25 : 1;
+                ctx.globalAlpha = alpha;
+                // Note body
+                const grad = ctx.createLinearGradient(n.x, n.y - 12, n.x, n.y + 12);
+                grad.addColorStop(0, n.color); grad.addColorStop(1, '#000');
+                ctx.fillStyle = n.hit ? '#fff' : n.missed ? '#444' : grad;
+                ctx.fillRect(n.x - laneWidth * 0.35, n.y - 12, laneWidth * 0.7, 24);
+                // Note border
+                ctx.strokeStyle = n.color; ctx.lineWidth = 2;
+                ctx.strokeRect(n.x - laneWidth * 0.35, n.y - 12, laneWidth * 0.7, 24);
+                // Particles
+                if (n.particles) {
+                    for (const p of n.particles) {
+                        ctx.fillStyle = `rgba(${n.color.slice(1).match(/.{2}/g).map(h=>parseInt(h,16)).join(',')},${p.life/12})`;
+                        ctx.beginPath(); ctx.arc(n.x + p.vx * (12-p.life), n.y + p.vy * (12-p.life), 3, 0, Math.PI*2); ctx.fill();
+                    }
+                }
+                // Grade text
+                if (n.grade && n.gradeLife > 0) {
+                    ctx.fillStyle = n.grade === 'Perfect!' ? '#ffd700' : n.grade === 'Great!' ? '#44ff44' : n.grade === 'Good' ? '#44aaff' : '#ff4444';
+                    ctx.font = 'bold 12px "Segoe UI"'; ctx.textAlign = 'center';
+                    ctx.fillText(n.grade, n.x, n.y - 18);
+                    ctx.textAlign = 'start';
+                }
+            }
+            ctx.globalAlpha = 1;
+
+            // Key labels at bottom
+            ctx.fillStyle = '#555'; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
+            for (let i = 0; i < LANES; i++) {
+                const keyName = KEYS[i].toUpperCase();
+                ctx.fillText(keyName, i * laneWidth + laneWidth / 2, H - 12);
+            }
+            ctx.textAlign = 'start';
+
+            // Combo display
+            if (combo >= 5) {
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 22px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('🔥 ' + combo + ' COMBO', W/2, hitY - 45);
+                ctx.textAlign = 'start';
+            }
+        }
+
+        function endGame() { /* not auto-ended, player plays until they click new game */ }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        // Keyboard
+        document.addEventListener('keydown', e => {
+            const key = e.key.toLowerCase();
+            const idx = KEYS.indexOf(key);
+            if (idx >= 0) { e.preventDefault(); hitLane(idx); }
+        });
+
+        // Lane buttons (touch)
+        for (let i = 0; i < LANES; i++) {
+            document.getElementById('btn' + i).addEventListener('pointerdown', e => { e.preventDefault(); hitLane(i); });
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>052 - 下100层</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 360px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #0a0a1e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>👟 下100层 — #052</h1>
+    <div class="top-bar">
+        <span>📏 层数 <span id="score">0</span></span>
+        <span>⚡ 速度 <span id="speed">1</span>x</span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 ←→/AD 移动 | 踩蓝色弹跳平台弹起 | ❌红色平台一次即碎 | ⚡闪电平台加速下落</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 摔倒了！</h2>
+        <p>层数：<strong id="endScore">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, player, platforms, score, bestScore, gameOver, animId;
+        let scrollY, speed, particles, keys, speedBoosted;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 360);
+            W = maxW; H = Math.floor(W * 1.35);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; gameOver = false; scrollY = 0; speed = 1; speedBoosted = false; particles = []; keys = {};
+            bestScore = parseInt(localStorage.getItem('down100-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('speed').textContent = '1';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            player = { x: W/2, y: 60, w: 24, h: 28, vy: 0, onGround: false, dir: 0 };
+            platforms = [];
+            // Generate initial platforms
+            for (let i = 0; i < 12; i++) {
+                const py = i * 40;
+                platforms.push(createPlatform(py));
+            }
+            loop();
+        }
+
+        function createPlatform(y) {
+            const types = ['normal', 'normal', 'normal', 'normal', 'bounce', 'fragile', 'speed'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const w = type === 'bounce' ? 50 : type === 'fragile' ? 45 : 55 + Math.random() * 30;
+            const x = 10 + Math.random() * (W - w - 20);
+            let color = '#888';
+            if (type === 'bounce') color = '#44aaff';
+            if (type === 'fragile') color = '#ff4444';
+            if (type === 'speed') color = '#ffd700';
+            return { x, y, w, h: 8, type, color, broken: false, bounceAnim: 0 };
+        }
+
+        function update() {
+            if (gameOver) return;
+            // Player horizontal
+            const moveSpeed = 3.5;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) { player.x -= moveSpeed; player.dir = -1; }
+            else if (keys['ArrowRight'] || keys['d'] || keys['D']) { player.x += moveSpeed; player.dir = 1; }
+            else player.dir = 0;
+            if (player.x < -10) player.x = W + 10;
+            if (player.x > W + 10) player.x = -10;
+
+            // Gravity
+            player.vy += 0.3;
+            player.y += player.vy;
+
+            // Scroll management - player stays in upper portion
+            const targetScrollY = player.y - H * 0.3 + scrollY;
+            scrollY += (targetScrollY - scrollY) * 0.15;
+
+            // Speed increase - also apply speed platform boost
+            const baseSpeed = 1 + Math.floor((scrollY) / 200) * 0.3;
+            if (!speedBoosted) speed = baseSpeed;
+            speedBoosted = false;
+            document.getElementById('speed').textContent = speed.toFixed(1);
+
+            // Platform collisions (only when falling)
+            if (player.vy > 0) {
+                for (const p of platforms) {
+                    const screenY = p.y - scrollY;
+                    if (screenY < -20 || screenY > H + 20 || p.broken) continue;
+                    const px = p.x, pw = p.w, ph = p.h;
+                    // Check if player feet land on platform
+                    if (player.x + player.w/2 > px && player.x - player.w/2 < px + pw &&
+                        player.y + player.h/2 >= screenY && player.y - player.h/2 < screenY + ph &&
+                        player.y + player.h/2 - player.vy <= screenY + 5) {
+                        if (p.type === 'fragile') {
+                            p.broken = true;
+                            for (let i = 0; i < 6; i++) particles.push({ x: px + Math.random()*pw, y: screenY, vx: (Math.random()-0.5)*2, vy: -1-Math.random()*2, life: 12, color: '#ff4444' });
+                            player.vy = -2;
+                        } else if (p.type === 'bounce') {
+                            player.vy = -8;
+                            player.y = screenY - player.h/2;
+                            p.bounceAnim = 5;
+                            for (let i = 0; i < 4; i++) particles.push({ x: player.x, y: screenY, vx: (Math.random()-0.5)*2, vy: -3, life: 10, color: '#44aaff' });
+                        } else {
+                            player.vy = 0;
+                            player.y = screenY - player.h/2;
+                            if (p.type === 'speed') {
+                                speed += 0.8; speedBoosted = true;
+                            }
+                        }
+                        score = Math.max(score, Math.floor(scrollY / 30));
+                        document.getElementById('score').textContent = score;
+                        break;
+                    }
+                }
+            }
+
+            // Generate new platforms below
+            const lowestY = platforms.length > 0 ? Math.max(...platforms.map(p => p.y)) : 0;
+            while (lowestY - scrollY < H + 200) {
+                const ny = (platforms.length > 0 ? Math.max(...platforms.map(p => p.y)) : 0) + 35 + Math.random() * 20;
+                platforms.push(createPlatform(ny));
+            }
+            // Remove old platforms
+            platforms = platforms.filter(p => p.y - scrollY > -60 && p.y - scrollY < H + 60);
+
+            // Bounce animation decay
+            for (const p of platforms) { if (p.bounceAnim > 0) p.bounceAnim -= 0.3; }
+
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+
+            // Game over - fell below screen
+            if (player.y - scrollY > H + 30) endGame();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Background gradient
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+            bgGrad.addColorStop(0, '#0a0a2e'); bgGrad.addColorStop(1, '#1a0a2e');
+            ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+
+            // Platforms
+            for (const p of platforms) {
+                const sy = p.y - scrollY;
+                if (sy < -20 || sy > H + 20 || p.broken) continue;
+                const bounceOffset = p.bounceAnim ? Math.sin(p.bounceAnim * 3) * 3 : 0;
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fillRect(p.x + 2, sy + bounceOffset + 2, p.w, p.h);
+                // Body
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x, sy + bounceOffset, p.w, p.h);
+                // Highlight
+                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillRect(p.x, sy + bounceOffset, p.w, p.h * 0.4);
+                // Type indicator
+                if (p.type === 'bounce') {
+                    ctx.fillStyle = '#44aaff44'; ctx.fillRect(p.x - 2, sy + bounceOffset - 2, p.w + 4, p.h + 4);
+                }
+                if (p.type === 'speed') {
+                    ctx.fillStyle = '#ffd700'; ctx.font = '8px "Segoe UI"'; ctx.textAlign = 'center';
+                    ctx.fillText('⚡', p.x + p.w/2, sy + bounceOffset - 2);
+                }
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(${p.color==='#44aaff'?'68,170,255':'255,68,68'},${p.life/12})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Player
+            const py = player.y - scrollY;
+            ctx.save(); ctx.translate(player.x, py);
+            if (player.dir !== 0) ctx.scale(player.dir || 1, 1);
+            // Body
+            ctx.fillStyle = '#44ff88'; ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
+            // Face
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(4, -6, 4, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -6, 2, 0, Math.PI*2); ctx.fill();
+            // Hat
+            ctx.fillStyle = '#ff6644'; ctx.fillRect(-player.w/2, -player.h/2 - 4, player.w, 6);
+            ctx.restore();
+
+            // Score display
+            ctx.fillStyle = '#ffd700'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('第 ' + score + ' 层', W/2, 22);
+            ctx.textAlign = 'start';
+
+            // Depth indicator
+            const depthPercent = Math.min(100, Math.floor(scrollY / 30));
+            ctx.fillStyle = '#aaa'; ctx.font = '10px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('深度: ' + Math.floor(scrollY/10) + 'm', W - 8, H - 8);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endOverlay').style.display = 'block';
+            if (score > bestScore) { bestScore = score; localStorage.setItem('down100-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault(); });
+        document.addEventListener('keyup', e => { keys[e.key] = false; e.preventDefault(); });
+
+        // Touch controls
+        let touchLeft = false, touchRight = false;
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            for (const t of e.changedTouches) {
+                if (t.clientX < rect.left + rect.width / 2) touchLeft = true;
+                else touchRight = true;
+            }
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            touchLeft = false; touchRight = false;
+            for (const t of e.touches) {
+                if (t.clientX < rect.left + rect.width / 2) touchLeft = true;
+                else touchRight = true;
+            }
+        });
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            touchLeft = false; touchRight = false;
+            for (const t of e.touches) {
+                if (t.clientX < rect.left + rect.width / 2) touchLeft = true;
+                else touchRight = true;
+            }
+        });
+
+        // Merge touch into keys in update
+        const origUpdate = update;
+        update = function() {
+            if (touchLeft) keys['ArrowLeft'] = true; else delete keys['ArrowLeft'];
+            if (touchRight) keys['ArrowRight'] = true; else delete keys['ArrowRight'];
+            origUpdate();
+        };
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

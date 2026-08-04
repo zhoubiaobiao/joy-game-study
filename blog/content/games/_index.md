@@ -58,5 +58,15 @@ menu: main
 | 048 | 🏒 冰球对战 | [开始游戏](/joy-game-study/play/048-airhockey/) |
 | 049 | 🟢 球球大作战 | [开始游戏](/joy-game-study/play/049-blob/) |
 | 050 | 🐍 贪吃蛇对决 | [开始游戏](/joy-game-study/play/050-snakeduel/) |
+| 051 | 🦘 跳一跳 | [开始游戏](/joy-game-study/play/051-jump/) |
+| 052 | 👟 下100层 | [开始游戏](/joy-game-study/play/052-down100/) |
+| 053 | 🎵 节奏大师 | [开始游戏](/joy-game-study/play/053-rhythm/) |
+| 054 | 🧷 抽针解谜 | [开始游戏](/joy-game-study/play/054-pinpull/) |
+| 055 | 🎯 纸上投篮 | [开始游戏](/joy-game-study/play/055-papertoss/) |
+| 056 | 🏹 射箭大师 | [开始游戏](/joy-game-study/play/056-archery/) |
+| 057 | 🚲 平衡单车 | [开始游戏](/joy-game-study/play/057-bike/) |
+| 058 | 🌊 冲浪达人 | [开始游戏](/joy-game-study/play/058-surf/) |
+| 059 | ⚖️ 走钢丝 | [开始游戏](/joy-game-study/play/059-tightrope/) |
+| 060 | 🧲 磁力迷宫 | [开始游戏](/joy-game-study/play/060-magnet/) |
 
-> 进度：50 / 100 🎉
+> 进度：60 / 100 🎉

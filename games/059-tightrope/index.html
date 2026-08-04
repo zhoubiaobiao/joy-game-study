@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>059 - 走钢丝</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 400px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>⚖️ 走钢丝 — #059</h1>
+    <div class="top-bar">
+        <span>📏 <span id="score">0</span>m</span>
+        <span>🪙 <span id="coins">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 ←→/AD 保持平衡 | 在钢丝上行走收集金币 | 倾斜过多掉落 | 大杆旋转影响平衡</div>
+    <div class="overlay" id="endOverlay">
+        <h2>💥 掉下去了！</h2>
+        <p>距离：<strong id="endScore">0</strong>m | 金币：<strong id="endCoins">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, walker, rope, coins, score, coinCount, bestScore, gameOver, animId;
+        let balanceAngle, keys, particles, windForce, windTimer, camX;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 400);
+            W = maxW; H = Math.floor(W * 1.1);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; coinCount = 0; gameOver = false; balanceAngle = 0;
+            keys = {}; particles = []; windForce = 0; windTimer = 0; camX = 0;
+            bestScore = parseInt(localStorage.getItem('tightrope-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('coins').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            // Rope between two poles
+            rope = { startX: -200, startY: H * 0.55, endX: 4800, endY: H * 0.45, sag: 15 };
+            walker = { x: W * 0.3, y: H * 0.55, vy: 0, onRope: true };
+            // Generate coins along rope
+            coins = [];
+            for (let i = 200; i < 4600; i += 150 + Math.random() * 150) {
+                const t = (i - rope.startX) / (rope.endX - rope.startX);
+                const ropeY = rope.startY + (rope.endY - rope.startY) * t + Math.sin(t * Math.PI) * rope.sag;
+                coins.push({ x: i, y: ropeY - 35 - Math.random() * 25, r: 8, collected: false, sparkle: Math.random() * Math.PI * 2 });
+            }
+            loop();
+        }
+
+        function getRopeY(x) {
+            const t = Math.max(0, Math.min(1, (x - rope.startX) / (rope.endX - rope.startX)));
+            return rope.startY + (rope.endY - rope.startY) * t + Math.sin(t * Math.PI) * rope.sag;
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            // Wind changes
+            windTimer++;
+            if (windTimer > 120 + Math.random() * 180) {
+                windTimer = 0;
+                windForce = (Math.random() - 0.5) * 2;
+            }
+            windForce += (Math.random() - 0.5) * 0.05;
+            windForce = Math.max(-1.5, Math.min(1.5, windForce));
+
+            // Input
+            const inputForce = 0.03;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) balanceAngle -= inputForce;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) balanceAngle += inputForce;
+
+            // Balance physics - the balancing pole helps
+            balanceAngle += windForce * 0.008;
+            // Pole oscillation dampening
+            balanceAngle *= 0.99;
+            // Gravity pulling if off balance
+            if (Math.abs(balanceAngle) > 0.3) {
+                balanceAngle += Math.sign(balanceAngle) * 0.001 * (Math.abs(balanceAngle) - 0.3);
+            }
+
+            // Move walker
+            if (walker.onRope) {
+                walker.x += 0.8;
+                camX = walker.x - W * 0.3;
+                walker.y = getRopeY(walker.x) - 20;
+            }
+
+            // Collect coins
+            for (const c of coins) {
+                if (c.collected) continue;
+                if (Math.hypot(walker.x - c.x, walker.y - c.y) < 30) {
+                    c.collected = true;
+                    coinCount++;
+                    document.getElementById('coins').textContent = coinCount;
+                    for (let i = 0; i < 5; i++) particles.push({ x: c.x, y: c.y, vx: (Math.random()-0.5)*2, vy: -2-Math.random()*2, life: 12, color: '#ffd700' });
+                }
+            }
+
+            // Falling
+            if (!walker.onRope) {
+                walker.vy += 0.3;
+                walker.y += walker.vy;
+            }
+
+            // Score
+            score = Math.max(score, Math.floor(walker.x / 10));
+            document.getElementById('score').textContent = score;
+
+            // Game over
+            if (Math.abs(balanceAngle) > Math.PI / 2.2) {
+                walker.onRope = false;
+                walker.vy = 0;
+                endGame();
+                return;
+            }
+            if (walker.y > H + 50) { endGame(); return; }
+
+            // Reached end
+            if (walker.x >= rope.endX) {
+                score += 500; coinCount += 50;
+                document.getElementById('score').textContent = score;
+                document.getElementById('coins').textContent = coinCount;
+                endGame();
+                return;
+            }
+
+            // Particles
+            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Sky
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+            skyGrad.addColorStop(0, '#1a1a3e'); skyGrad.addColorStop(0.5, '#2a3050'); skyGrad.addColorStop(1, '#3a4060');
+            ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, H);
+
+            // Stars
+            for (let i = 0; i < 40; i++) {
+                const sx = (i * 173 + 50) % W;
+                const sy = (i * 97 + 20) % (H * 0.5);
+                ctx.fillStyle = `rgba(255,255,255,${0.3 + (i%3)*0.2})`;
+                ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI*2); ctx.fill();
+            }
+
+            ctx.save(); ctx.translate(-camX, 0);
+
+            // Poles
+            const poleXs = [rope.startX, rope.endX];
+            for (const px of poleXs) {
+                const py = px === rope.startX ? rope.startY : rope.endY;
+                ctx.fillStyle = '#8B4513'; ctx.fillRect(px - 6, py, 12, H - py);
+                ctx.fillStyle = '#A0522D'; ctx.fillRect(px - 4, py, 8, H - py);
+                // Platform at top
+                ctx.fillStyle = '#6B3410'; ctx.fillRect(px - 20, py - 5, 40, 10);
+            }
+
+            // Rope
+            ctx.strokeStyle = '#888'; ctx.lineWidth = 3; ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(rope.startX, rope.startY);
+            for (let x = rope.startX; x <= Math.min(rope.endX, walker.x + W + 100); x += 10) {
+                ctx.lineTo(x, getRopeY(x));
+            }
+            ctx.stroke();
+            // Rope highlight
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(rope.startX, rope.startY - 1);
+            for (let x = rope.startX; x <= Math.min(rope.endX, walker.x + W + 100); x += 10) {
+                ctx.lineTo(x, getRopeY(x) - 1);
+            }
+            ctx.stroke();
+
+            // Coins
+            for (const c of coins) {
+                if (c.collected || c.x < camX - 50 || c.x > camX + W + 50) continue;
+                c.sparkle += 0.05;
+                const glow = 0.5 + Math.sin(c.sparkle) * 0.3;
+                ctx.fillStyle = `rgba(255,215,0,${glow})`; ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 2, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Segoe UI"'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('$', c.x, c.y);
+                ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+            }
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = `rgba(255,215,0,${p.life/12})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Walker
+            const wx = walker.x, wy = walker.y;
+            ctx.save(); ctx.translate(wx, wy);
+            ctx.rotate(balanceAngle);
+            // Body
+            ctx.fillStyle = '#ff8844'; ctx.fillRect(-5, -22, 10, 18);
+            // Head
+            ctx.fillStyle = '#ffaa66'; ctx.beginPath(); ctx.arc(0, -26, 8, 0, Math.PI*2); ctx.fill();
+            // Hat
+            ctx.fillStyle = '#444'; ctx.fillRect(-7, -36, 14, 6);
+            ctx.fillStyle = '#555'; ctx.fillRect(-5, -40, 10, 4);
+            // Legs
+            ctx.fillStyle = '#3355aa'; ctx.fillRect(-4, -4, 4, 8); ctx.fillRect(1, -4, 4, 8);
+            // Feet
+            ctx.fillStyle = '#664422'; ctx.beginPath(); ctx.ellipse(-4, 5, 5, 3, 0, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(4, 5, 5, 3, 0, 0, Math.PI*2); ctx.fill();
+            // Balancing pole
+            ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(-45, -18); ctx.lineTo(45, -18); ctx.stroke();
+            // Pole ends
+            ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.arc(-45, -18, 5, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(45, -18, 5, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+            ctx.restore(); // camera
+
+            // Balance indicator
+            const barW = 100, barH = 8, bx = W/2 - barW/2, by = H - 40;
+            ctx.fillStyle = '#333'; ctx.fillRect(bx, by, barW, barH);
+            const indicatorX = bx + barW/2 + (balanceAngle / (Math.PI/2.2)) * barW/2;
+            ctx.fillStyle = Math.abs(balanceAngle) > 1 ? '#ff4444' : '#44ff44';
+            ctx.beginPath(); ctx.arc(indicatorX, by + barH/2, 6, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.font = '11px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('平衡', W/2, by - 5);
+            ctx.textAlign = 'start';
+
+            // Wind indicator
+            const windStr = Math.abs(windForce) < 0.3 ? '弱' : Math.abs(windForce) < 0.8 ? '中' : '强';
+            const windDir = windForce > 0.1 ? '→' : windForce < -0.1 ? '←' : '·';
+            ctx.fillStyle = '#aaa'; ctx.font = '11px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText(`🌬️ 风: ${windStr} ${windDir}`, W - 10, 22);
+            ctx.textAlign = 'start';
+
+            // Progress bar
+            const progress = Math.min(1, walker.x / rope.endX);
+            ctx.fillStyle = '#333'; ctx.fillRect(10, H - 15, W - 20, 6);
+            ctx.fillStyle = '#44ff44'; ctx.fillRect(10, H - 15, (W - 20) * progress, 6);
+            ctx.fillStyle = '#fff'; ctx.font = '9px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText(Math.floor(progress * 100) + '%', W/2, H - 18);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endCoins').textContent = coinCount;
+            document.getElementById('endOverlay').style.display = 'block';
+            const totalScore = score + coinCount * 10;
+            if (totalScore > bestScore) { bestScore = totalScore; localStorage.setItem('tightrope-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight','a','d','A','D'].includes(e.key)) e.preventDefault(); });
+        document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // Touch controls
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); keys['ArrowLeft'] = false; keys['ArrowRight'] = false; });
+
+        function handleTouch(e) {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            for (const t of e.touches) {
+                const tx = (t.clientX - rect.left) / rect.width;
+                keys['ArrowLeft'] = tx < 0.35;
+                keys['ArrowRight'] = tx > 0.65;
+            }
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>

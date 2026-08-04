@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>058 - 冲浪达人</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; min-height: 100vh; min-height: 100dvh; padding: 10px; user-select: none; -webkit-user-select: none; }
+        h1 { color: #00d4ff; font-size: clamp(1.1em, 4vw, 1.6em); margin-bottom: 2px; }
+        .top-bar { display: flex; gap: 16px; margin-bottom: 4px; font-size: clamp(0.8em, 2.5vw, 0.9em); color: #aaa; flex-wrap: wrap; justify-content: center; }
+        .top-bar span { color: #ffd700; font-weight: bold; }
+        .canvas-wrap { width: 100%; max-width: 420px; }
+        canvas { width: 100%; display: block; border: 2px solid #333; border-radius: 6px; touch-action: manipulation; background: #1a1a2e; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+        .btn { padding: 8px 18px; border: 2px solid #444; background: transparent; color: #ccc; border-radius: 8px; cursor: pointer; font-size: clamp(0.75em, 2.5vw, 0.9em); -webkit-tap-highlight-color: transparent; }
+        .btn:active { border-color: #00d4ff; color: #00d4ff; }
+        .btn.primary { background: #00d4ff33; border-color: #00d4ff; color: #00d4ff; }
+        .overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); padding: 24px 30px; border-radius: 12px; text-align: center; display: none; z-index: 10; }
+        .overlay h2 { font-size: clamp(1.3em, 4vw, 2em); margin-bottom: 8px; color: #ffd700; }
+        .overlay p { color: #ccc; margin-bottom: 14px; }
+        .overlay button { padding: 10px 28px; font-size: 1em; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🌊 冲浪达人 — #058</h1>
+    <div class="top-bar">
+        <span>📏 <span id="score">0</span>m</span>
+        <span>🌟 特技 <span id="tricks">0</span></span>
+        <span>🏆 <span id="best">0</span></span>
+    </div>
+    <div class="canvas-wrap"><canvas id="game"></canvas></div>
+    <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 ←→/AD 移动冲浪 | ↑/W 跳跃做特技 | 避开礁石 | 在浪尖做特技加分</div>
+    <div class="overlay" id="endOverlay">
+        <h2>🌊 被浪吞没了！</h2>
+        <p>距离：<strong id="endScore">0</strong>m | 特技：<strong id="endTricks">0</strong></p>
+        <button onclick="newGame()">🔄 再来一局</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        let W, H, surfer, rocks, score, tricks, bestScore, gameOver, animId;
+        let scrollX, keys, particles, jumping, jumpVy, waveOffset;
+
+        function resize() {
+            const maxW = Math.min(canvas.parentElement.clientWidth, 420);
+            W = maxW; H = Math.floor(W * 0.65);
+            canvas.width = W; canvas.height = H;
+        }
+
+        function newGame() {
+            cancelAnimationFrame(animId);
+            resize();
+            score = 0; tricks = 0; gameOver = false; scrollX = 0; waveOffset = 0;
+            jumping = false; jumpVy = 0; keys = {}; particles = [];
+            bestScore = parseInt(localStorage.getItem('surf-best') || '0');
+            document.getElementById('score').textContent = '0';
+            document.getElementById('tricks').textContent = '0';
+            document.getElementById('best').textContent = bestScore;
+            document.getElementById('endOverlay').style.display = 'none';
+            surfer = { x: W * 0.35, y: H * 0.55, w: 30, h: 14, vy: 0, onWave: true, tricking: false, trickTimer: 0 };
+            rocks = [];
+            // Generate initial rocks
+            for (let i = 300; i < 5000; i += 200 + Math.random() * 300) {
+                rocks.push({ x: i, y: H * 0.45 + Math.random() * H * 0.25, r: 15 + Math.random() * 20 });
+            }
+            loop();
+        }
+
+        function getWaveY(x, offset) {
+            const t = offset + x * 0.004;
+            return H * 0.5 + Math.sin(t) * 18 + Math.sin(t * 2.3) * 8 + Math.cos(t * 0.5) * 25;
+        }
+
+        function update() {
+            if (gameOver) return;
+            waveOffset += 0.025;
+
+            // Surfer horizontal movement
+            const moveSpeed = 3;
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) surfer.x -= moveSpeed;
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) surfer.x += moveSpeed;
+            surfer.x = Math.max(30, Math.min(W - 30, surfer.x));
+
+            // Jump
+            if ((keys['ArrowUp'] || keys['w'] || keys['W']) && !jumping) {
+                jumping = true;
+                jumpVy = -6;
+                surfer.tricking = true;
+                surfer.trickTimer = 25;
+                tricks++;
+                document.getElementById('tricks').textContent = tricks;
+                for (let i = 0; i < 8; i++) particles.push({ x: surfer.x, y: surfer.y, vx: (Math.random()-0.5)*2, vy: -3-Math.random()*2, life: 15, color: '#fff' });
+            }
+
+            // Jump physics
+            if (jumping) {
+                jumpVy += 0.25;
+                surfer.y += jumpVy;
+                if (surfer.trickTimer > 0) surfer.trickTimer--;
+                else surfer.tricking = false;
+            }
+
+            // Wave following
+            const waveY = getWaveY(surfer.x, waveOffset);
+            if (!jumping) {
+                surfer.y += (waveY - surfer.h/2 - surfer.y) * 0.15;
+                surfer.onWave = true;
+            }
+            // Landing
+            if (jumping && jumpVy > 0 && surfer.y + surfer.h/2 >= waveY) {
+                jumping = false;
+                jumpVy = 0;
+                surfer.y = waveY - surfer.h/2;
+                surfer.tricking = false;
+                for (let i = 0; i < 5; i++) particles.push({ x: surfer.x, y: surfer.y, vx: (Math.random()-0.5)*1.5, vy: -1-Math.random()*1.5, life: 10, color: '#44aaff' });
+            }
+
+            // Scroll
+            scrollX += 1.5;
+            score = Math.floor(scrollX / 5);
+            document.getElementById('score').textContent = score;
+
+            // Rock collision
+            for (const r of rocks) {
+                const rx = r.x - scrollX;
+                if (rx < -50 || rx > W + 50) continue;
+                if (Math.hypot(surfer.x - rx, surfer.y - r.y) < r.r + surfer.w/3) {
+                    endGame();
+                    return;
+                }
+            }
+
+            // Generate more rocks
+            const lastRockX = rocks.length > 0 ? Math.max(...rocks.map(r => r.x)) : 300;
+            if (lastRockX < scrollX + W + 400) {
+                rocks.push({ x: lastRockX + 200 + Math.random() * 300, y: H * 0.45 + Math.random() * H * 0.25, r: 15 + Math.random() * 20 });
+            }
+            rocks = rocks.filter(r => r.x - scrollX > -80);
+
+            // Fall off screen
+            if (surfer.y > H + 30) endGame();
+
+            // Particles
+            for (const p of particles) { p.x += p.vx - 1.5; p.y += p.vy; p.life--; }
+            particles = particles.filter(p => p.life > 0);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            // Ocean background
+            const oceanGrad = ctx.createLinearGradient(0, 0, 0, H);
+            oceanGrad.addColorStop(0, '#1a8fc4'); oceanGrad.addColorStop(0.4, '#0d6fa0'); oceanGrad.addColorStop(1, '#065078');
+            ctx.fillStyle = oceanGrad; ctx.fillRect(0, 0, W, H);
+
+            // Sun
+            ctx.fillStyle = 'rgba(255,200,50,0.3)'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.12, 30, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#ffd700'; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.12, 22, 0, Math.PI*2); ctx.fill();
+
+            // Waves
+            ctx.save(); ctx.translate(-scrollX, 0);
+            const viewStart = scrollX - 50, viewEnd = scrollX + W + 50;
+            // Background wave layer
+            ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath();
+            ctx.moveTo(viewStart, H);
+            for (let x = viewStart; x <= viewEnd; x += 20) {
+                const wy = H * 0.35 + Math.sin(x * 0.003 + waveOffset * 1.5) * 15;
+                ctx.lineTo(x, wy);
+            }
+            ctx.lineTo(viewEnd, H); ctx.closePath(); ctx.fill();
+
+            // Main waves
+            for (let x = viewStart; x <= viewEnd; x += 40) {
+                const wy = getWaveY(x + 20, waveOffset);
+                const waveH = 40 + Math.sin(x * 0.002 + waveOffset) * 15;
+                const grad = ctx.createLinearGradient(0, wy, 0, wy - waveH);
+                grad.addColorStop(0, 'rgba(13,111,160,0.6)');
+                grad.addColorStop(1, 'rgba(255,255,255,0.3)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.moveTo(x, wy); ctx.quadraticCurveTo(x + 20, wy - waveH, x + 40, wy);
+                ctx.lineTo(x + 40, wy + 5); ctx.quadraticCurveTo(x + 20, wy - waveH + 10, x, wy + 5);
+                ctx.closePath(); ctx.fill();
+            }
+
+            // Wave surface line
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let x = viewStart; x <= viewEnd; x += 10) {
+                const wy = getWaveY(x, waveOffset);
+                x === viewStart ? ctx.moveTo(x, wy) : ctx.lineTo(x, wy);
+            }
+            ctx.stroke();
+
+            // Rocks
+            for (const r of rocks) {
+                const rx = r.x - scrollX;
+                if (rx < -50 || rx > W + 50) continue;
+                ctx.fillStyle = '#555'; ctx.beginPath();
+                ctx.moveTo(rx, r.y - r.r); ctx.lineTo(rx + r.r, r.y); ctx.lineTo(rx + r.r*0.5, r.y + r.r);
+                ctx.lineTo(rx - r.r*0.5, r.y + r.r); ctx.lineTo(rx - r.r, r.y);
+                ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#777'; ctx.beginPath(); ctx.arc(rx, r.y - r.r*0.3, r.r*0.5, 0, Math.PI*2); ctx.fill();
+            }
+            ctx.restore();
+
+            // Particles
+            for (const p of particles) {
+                ctx.fillStyle = p.color === '#fff' ? `rgba(255,255,255,${p.life/15})` : `rgba(68,170,255,${p.life/10})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
+            }
+
+            // Surfer
+            ctx.save(); ctx.translate(surfer.x, surfer.y);
+            if (surfer.tricking) ctx.rotate(surfer.trickTimer * 0.2); // spin during trick
+            // Surfboard
+            ctx.fillStyle = '#ff6644'; ctx.beginPath();
+            ctx.moveTo(-surfer.w/2, 0); ctx.quadraticCurveTo(0, surfer.h/2, surfer.w/2, 0);
+            ctx.quadraticCurveTo(0, -surfer.h/2, -surfer.w/2, 0);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#cc4422'; ctx.lineWidth = 2; ctx.stroke();
+            // Center stripe
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(8, 0); ctx.stroke();
+            // Surfer body
+            ctx.fillStyle = '#ffaa66'; ctx.beginPath(); ctx.arc(0, -surfer.h - 6, 6, 0, Math.PI*2); ctx.fill(); // head
+            ctx.fillStyle = '#4488ff'; ctx.fillRect(-4, -surfer.h - 12, 8, 6); // hat
+            ctx.restore();
+
+            // Trick indicator
+            if (surfer.tricking) {
+                ctx.fillStyle = '#ffd700'; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
+                ctx.fillText('🌟 ' + tricks, surfer.x, surfer.y - 35);
+                ctx.textAlign = 'start';
+            }
+
+            // HUD
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'left';
+            ctx.fillText('🏄 ' + score + 'm', 10, 22);
+            ctx.fillText('🌟 ' + tricks, 10, 40);
+            ctx.textAlign = 'start';
+        }
+
+        function endGame() {
+            gameOver = true;
+            document.getElementById('endScore').textContent = score;
+            document.getElementById('endTricks').textContent = tricks;
+            document.getElementById('endOverlay').style.display = 'block';
+            const totalScore = score + tricks * 50;
+            if (totalScore > bestScore) { bestScore = totalScore; localStorage.setItem('surf-best', bestScore); }
+        }
+
+        function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowLeft','ArrowRight','ArrowUp','a','d','w','A','D','W'].includes(e.key)) e.preventDefault(); });
+        document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // Touch controls
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchmove', e => { e.preventDefault(); handleTouch(e); });
+        canvas.addEventListener('touchend', e => { e.preventDefault(); keys['ArrowLeft'] = false; keys['ArrowRight'] = false; keys['ArrowUp'] = false; });
+
+        function handleTouch(e) {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            for (const t of e.touches) {
+                const tx = (t.clientX - rect.left) / rect.width;
+                const ty = (t.clientY - rect.top) / rect.height;
+                keys['ArrowLeft'] = tx < 0.3;
+                keys['ArrowRight'] = tx > 0.7;
+                keys['ArrowUp'] = ty < 0.4;
+            }
+        }
+
+        document.getElementById('newBtn').addEventListener('click', newGame);
+        window.addEventListener('resize', () => { resize(); });
+        newGame();
+    </script>
+    <script src="/joy-game-study/nav.js"></script>
+</body>
+</html>
