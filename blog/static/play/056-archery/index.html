@@ -185,21 +185,22 @@
             // Bow (drawn after stuck arrows, before flying arrows)
             if (arrowsLeft > 0) {
                 const bx = bow.x, by = bow.y, r = bow.r;
-                // Draw bow arc - smile shape (bottom half), opening upward
+                // Draw bow arc - cup shape (top half), curving upward toward target
                 ctx.strokeStyle = '#6B3410'; ctx.lineWidth = 8; ctx.lineCap = 'round';
-                ctx.beginPath(); ctx.arc(bx, by, r, Math.PI, 2 * Math.PI); ctx.stroke();
+                ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI, true); ctx.stroke();
                 // Inner highlight
                 ctx.strokeStyle = '#A0722A'; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.arc(bx, by, r - 2, Math.PI, 2 * Math.PI); ctx.stroke();
+                ctx.beginPath(); ctx.arc(bx, by, r - 2, 0, Math.PI, true); ctx.stroke();
 
-                // Grip (center bottom of bow)
-                ctx.fillStyle = '#4a2800'; ctx.fillRect(bx - 4, by + r - 12, 8, 16);
-                ctx.fillStyle = '#8B6914'; ctx.fillRect(bx - 3, by + r - 11, 6, 14);
+                // Grip (center top of bow arc)
+                ctx.fillStyle = '#4a2800'; ctx.fillRect(bx - 4, by - r - 4, 8, 16);
+                ctx.fillStyle = '#8B6914'; ctx.fillRect(bx - 3, by - r - 3, 6, 14);
 
+                // String endpoints: bottom of arc (left and right)
                 const leftX = bx + Math.cos(Math.PI) * r;   // bx - r
-                const leftY = by + Math.sin(Math.PI) * r;   // by
-                const rightX = bx + Math.cos(2*Math.PI) * r; // bx + r
-                const rightY = by + Math.sin(2*Math.PI) * r; // by
+                const leftY = by + Math.sin(Math.PI) * r;   // by (bottom)
+                const rightX = bx + Math.cos(0) * r;         // bx + r
+                const rightY = by + Math.sin(0) * r;         // by (bottom)
 
                 if (dragging && dragPos) {
                     // Pull direction from bow center to drag point
