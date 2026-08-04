@@ -100,7 +100,7 @@
             if (player.x > W + 12) player.x = -12;
 
             // Scroll speed increases with depth
-            scrollSpeed = (1.0 + Math.floor(totalScroll / 500) * 0.3) * speedMultiplier;
+            scrollSpeed = (0.7 + Math.floor(totalScroll / 600) * 0.2) * speedMultiplier;
             totalScroll += scrollSpeed;
 
             // Move all platforms upward
