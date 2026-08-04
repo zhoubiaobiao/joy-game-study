@@ -41,7 +41,7 @@
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         let W, H, player, platforms, score, bestScore, gameOver, animId;
-        let scrollY, speed, particles, keys, speedBoosted;
+        let totalScroll, scrollSpeed, particles, keys, speedTimer, speedMultiplier;
 
         function resize() {
             const maxW = Math.min(canvas.parentElement.clientWidth, 360);
@@ -51,111 +51,139 @@
 
         function newGame() {
             cancelAnimationFrame(animId);
+            if (speedTimer) { clearTimeout(speedTimer); speedTimer = null; }
             resize();
-            score = 0; gameOver = false; scrollY = 0; speed = 1; speedBoosted = false; particles = []; keys = {};
+            score = 0; gameOver = false; totalScroll = 0; scrollSpeed = 1.0; speedMultiplier = 1.0;
+            particles = []; keys = {};
             bestScore = parseInt(localStorage.getItem('down100-best') || '0');
             document.getElementById('score').textContent = '0';
-            document.getElementById('speed').textContent = '1';
+            document.getElementById('speed').textContent = '1.0';
             document.getElementById('best').textContent = bestScore;
             document.getElementById('endOverlay').style.display = 'none';
-            player = { x: W/2, y: 60, w: 24, h: 28, vy: 0, onGround: false, dir: 0 };
+            // Player at fixed screen position (upper portion)
+            player = { x: W/2, y: H * 0.25, w: 24, h: 28, vy: 0, dir: 0 };
             platforms = [];
-            // Generate initial platforms
-            for (let i = 0; i < 12; i++) {
-                const py = i * 40;
+            // Generate initial platforms covering entire screen
+            let py = H - 20;
+            while (py > -40) {
                 platforms.push(createPlatform(py));
+                py -= 35 + Math.random() * 20;
             }
+            // Guarantee a normal platform right below player's starting position
+            const safeY = player.y + player.h/2 + 10;
+            platforms.push({ x: player.x - 40, y: safeY, w: 80, h: 8, type: 'normal', color: '#888', broken: false, bounceAnim: 0 });
             loop();
         }
 
-        function createPlatform(y) {
-            const types = ['normal', 'normal', 'normal', 'normal', 'bounce', 'fragile', 'speed'];
+        function createPlatform(screenY) {
+            const types = ['normal','normal','normal','normal','bounce','fragile','speed'];
             const type = types[Math.floor(Math.random() * types.length)];
-            const w = type === 'bounce' ? 50 : type === 'fragile' ? 45 : 55 + Math.random() * 30;
-            const x = 10 + Math.random() * (W - w - 20);
+            const w = type === 'bounce' ? 55 : type === 'fragile' ? 48 : 58 + Math.random() * 32;
+            const x = 8 + Math.random() * (W - w - 16);
             let color = '#888';
             if (type === 'bounce') color = '#44aaff';
             if (type === 'fragile') color = '#ff4444';
             if (type === 'speed') color = '#ffd700';
-            return { x, y, w, h: 8, type, color, broken: false, bounceAnim: 0 };
+            return { x, y: screenY, w, h: 8, type, color, broken: false, bounceAnim: 0 };
         }
 
         function update() {
             if (gameOver) return;
-            // Player horizontal
-            const moveSpeed = 3.5;
+
+            // Player horizontal movement
+            const moveSpeed = 4;
             if (keys['ArrowLeft'] || keys['a'] || keys['A']) { player.x -= moveSpeed; player.dir = -1; }
             else if (keys['ArrowRight'] || keys['d'] || keys['D']) { player.x += moveSpeed; player.dir = 1; }
             else player.dir = 0;
-            if (player.x < -10) player.x = W + 10;
-            if (player.x > W + 10) player.x = -10;
+            // Wrap around screen
+            if (player.x < -12) player.x = W + 12;
+            if (player.x > W + 12) player.x = -12;
 
-            // Gravity
-            player.vy += 0.3;
+            // Scroll speed increases with depth
+            scrollSpeed = (1.0 + Math.floor(totalScroll / 500) * 0.3) * speedMultiplier;
+            totalScroll += scrollSpeed;
+
+            // Move all platforms upward
+            for (const p of platforms) {
+                p.y -= scrollSpeed;
+            }
+
+            // Player gravity (in screen space)
+            player.vy += 0.38;
             player.y += player.vy;
+            // Don't go above screen top
+            if (player.y < player.h/2) { player.y = player.h/2; if (player.vy < 0) player.vy = 0; }
 
-            // Scroll management - player stays in upper portion
-            const targetScrollY = player.y - H * 0.3 + scrollY;
-            scrollY += (targetScrollY - scrollY) * 0.15;
-
-            // Speed increase - also apply speed platform boost
-            const baseSpeed = 1 + Math.floor((scrollY) / 200) * 0.3;
-            if (!speedBoosted) speed = baseSpeed;
-            speedBoosted = false;
-            document.getElementById('speed').textContent = speed.toFixed(1);
-
-            // Platform collisions (only when falling)
+            // Platform collision (only when falling)
             if (player.vy > 0) {
                 for (const p of platforms) {
-                    const screenY = p.y - scrollY;
-                    if (screenY < -20 || screenY > H + 20 || p.broken) continue;
-                    const px = p.x, pw = p.w, ph = p.h;
-                    // Check if player feet land on platform (use world coords)
-                    if (player.x + player.w/2 > px && player.x - player.w/2 < px + pw &&
-                        player.y + player.h/2 >= p.y && player.y - player.h/2 < p.y + ph &&
-                        player.y + player.h/2 - player.vy <= p.y + 5) {
+                    if (p.broken) continue;
+                    if (p.y < -40 || p.y > H + 40) continue;
+                    // AABB collision: player must have been above platform before this frame
+                    if (player.x + player.w/2 > p.x && player.x - player.w/2 < p.x + p.w &&
+                        player.y + player.h/2 >= p.y && player.y - player.h/2 < p.y + p.h &&
+                        player.y + player.h/2 - player.vy <= p.y + 6) {
+                        // Land on platform
                         if (p.type === 'fragile') {
                             p.broken = true;
-                            for (let i = 0; i < 6; i++) particles.push({ x: px + Math.random()*pw, y: screenY, vx: (Math.random()-0.5)*2, vy: -1-Math.random()*2, life: 12, color: '#ff4444' });
+                            for (let i = 0; i < 8; i++) particles.push({ x: p.x + Math.random()*p.w, y: p.y, vx: (Math.random()-0.5)*3, vy: -1-Math.random()*3, life: 14, color: '#ff4444' });
                             player.vy = -2;
                         } else if (p.type === 'bounce') {
-                            player.vy = -8;
+                            player.vy = -9;
                             player.y = p.y - player.h/2;
-                            p.bounceAnim = 5;
-                            for (let i = 0; i < 4; i++) particles.push({ x: player.x, y: p.y, vx: (Math.random()-0.5)*2, vy: -3, life: 10, color: '#44aaff' });
+                            p.bounceAnim = 6;
+                            for (let i = 0; i < 5; i++) particles.push({ x: player.x, y: p.y, vx: (Math.random()-0.5)*2, vy: -2-Math.random()*2, life: 10, color: '#44aaff' });
                         } else {
                             player.vy = 0;
                             player.y = p.y - player.h/2;
                             if (p.type === 'speed') {
-                                speed += 0.8; speedBoosted = true;
+                                speedMultiplier = 2.0;
+                                if (speedTimer) clearTimeout(speedTimer);
+                                speedTimer = setTimeout(() => { speedMultiplier = 1.0; }, 2000);
                             }
                         }
-                        score = Math.max(score, Math.floor(scrollY / 30));
-                        document.getElementById('score').textContent = score;
                         break;
                     }
                 }
             }
 
-            // Generate new platforms below
-            while (true) {
-                const maxY = platforms.length > 0 ? Math.max(...platforms.map(p => p.y)) : 0;
-                if (maxY - scrollY >= H + 200) break;
-                const ny = maxY + 35 + Math.random() * 20;
-                platforms.push(createPlatform(ny));
+            // Score = floors cleared (approximate)
+            score = Math.floor(totalScroll / 40);
+            document.getElementById('score').textContent = score;
+            document.getElementById('speed').textContent = scrollSpeed.toFixed(1);
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('down100-best', bestScore);
+                document.getElementById('best').textContent = bestScore;
             }
-            // Remove old platforms
-            platforms = platforms.filter(p => p.y - scrollY > -60 && p.y - scrollY < H + 60);
+
+            // Generate new platforms at bottom
+            let maxY = -Infinity;
+            for (const p of platforms) {
+                if (!p.broken && p.y > maxY) maxY = p.y;
+            }
+            if (maxY === -Infinity) maxY = H;
+            while (maxY < H + 100) {
+                maxY += 35 + Math.random() * 20;
+                platforms.push(createPlatform(maxY));
+            }
+
+            // Remove platforms that scrolled off top
+            platforms = platforms.filter(p => p.y < H + 80 && !(p.y < -80 && p.broken));
+            // Also clean up broken platforms that are off screen
+            if (platforms.length > 30) {
+                platforms = platforms.filter(p => !p.broken || p.y > -40);
+            }
 
             // Bounce animation decay
-            for (const p of platforms) { if (p.bounceAnim > 0) p.bounceAnim -= 0.3; }
+            for (const p of platforms) { if (p.bounceAnim > 0) p.bounceAnim -= 0.4; }
 
             // Particles
             for (const p of particles) { p.x += p.vx; p.y += p.vy; p.life--; }
             particles = particles.filter(p => p.life > 0);
 
-            // Game over - fell below screen
-            if (player.y - scrollY > H + 30) endGame();
+            // Game over: player fell below screen
+            if (player.y > H + 40) endGame();
         }
 
         function draw() {
@@ -165,47 +193,56 @@
             bgGrad.addColorStop(0, '#0a0a2e'); bgGrad.addColorStop(1, '#1a0a2e');
             ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
 
+            // Depth indicator lines (parallax)
+            for (let i = 0; i < 5; i++) {
+                const ly = ((totalScroll * 0.3 + i * H * 0.25) % H);
+                ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke();
+            }
+
             // Platforms
             for (const p of platforms) {
-                const sy = p.y - scrollY;
-                if (sy < -20 || sy > H + 20 || p.broken) continue;
-                const bounceOffset = p.bounceAnim ? Math.sin(p.bounceAnim * 3) * 3 : 0;
+                if (p.broken || p.y < -30 || p.y > H + 30) continue;
+                const bounceOffset = p.bounceAnim > 0 ? Math.sin(p.bounceAnim * 3) * 3 : 0;
+                const sy = p.y + bounceOffset;
                 // Shadow
                 ctx.fillStyle = 'rgba(0,0,0,0.3)';
-                ctx.fillRect(p.x + 2, sy + bounceOffset + 2, p.w, p.h);
+                ctx.fillRect(p.x + 2, sy + 2, p.w, p.h);
                 // Body
                 ctx.fillStyle = p.color;
-                ctx.fillRect(p.x, sy + bounceOffset, p.w, p.h);
+                ctx.fillRect(p.x, sy, p.w, p.h);
                 // Highlight
-                ctx.fillStyle = 'rgba(255,255,255,0.25)';
-                ctx.fillRect(p.x, sy + bounceOffset, p.w, p.h * 0.4);
-                // Type indicator
-                if (p.type === 'bounce') {
-                    ctx.fillStyle = '#44aaff44'; ctx.fillRect(p.x - 2, sy + bounceOffset - 2, p.w + 4, p.h + 4);
-                }
-                if (p.type === 'speed') {
-                    ctx.fillStyle = '#ffd700'; ctx.font = '8px "Segoe UI"'; ctx.textAlign = 'center';
-                    ctx.fillText('⚡', p.x + p.w/2, sy + bounceOffset - 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(p.x, sy, p.w, p.h * 0.35);
+                // Type icons
+                if (p.type === 'speed' && p.bounceAnim <= 0) {
+                    ctx.fillStyle = '#000'; ctx.font = '9px "Segoe UI"'; ctx.textAlign = 'center';
+                    ctx.fillText('⚡', p.x + p.w/2, sy + p.h - 1);
                 }
             }
 
             // Particles
             for (const p of particles) {
-                ctx.fillStyle = `rgba(${p.color==='#44aaff'?'68,170,255':'255,68,68'},${p.life/12})`;
+                const alpha = p.life / 14;
+                ctx.fillStyle = p.color === '#44aaff'
+                    ? `rgba(68,170,255,${alpha})`
+                    : `rgba(255,68,68,${alpha})`;
                 ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI*2); ctx.fill();
             }
 
             // Player
-            const py = player.y - scrollY;
-            ctx.save(); ctx.translate(player.x, py);
+            ctx.save(); ctx.translate(player.x, player.y);
             if (player.dir !== 0) ctx.scale(player.dir || 1, 1);
+            // Body glow
+            ctx.fillStyle = 'rgba(68,255,136,0.3)'; ctx.beginPath();
+            ctx.arc(0, 0, player.w * 0.8, 0, Math.PI*2); ctx.fill();
             // Body
             ctx.fillStyle = '#44ff88'; ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
-            // Face
-            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(4, -6, 4, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -6, 2, 0, Math.PI*2); ctx.fill();
+            // Eyes
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(4, -7, 4, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(5, -7, 2, 0, Math.PI*2); ctx.fill();
             // Hat
-            ctx.fillStyle = '#ff6644'; ctx.fillRect(-player.w/2, -player.h/2 - 4, player.w, 6);
+            ctx.fillStyle = '#ff6644'; ctx.fillRect(-player.w/2 - 1, -player.h/2 - 4, player.w + 2, 6);
             ctx.restore();
 
             // Score display
@@ -214,9 +251,8 @@
             ctx.textAlign = 'start';
 
             // Depth indicator
-            const depthPercent = Math.min(100, Math.floor(scrollY / 30));
-            ctx.fillStyle = '#aaa'; ctx.font = '10px "Segoe UI"'; ctx.textAlign = 'right';
-            ctx.fillText('深度: ' + Math.floor(scrollY/10) + 'm', W - 8, H - 8);
+            ctx.fillStyle = '#666'; ctx.font = '10px "Segoe UI"'; ctx.textAlign = 'right';
+            ctx.fillText('深度: ' + Math.floor(totalScroll/10) + 'm', W - 8, H - 8);
             ctx.textAlign = 'start';
         }
 
@@ -224,11 +260,16 @@
             gameOver = true;
             document.getElementById('endScore').textContent = score;
             document.getElementById('endOverlay').style.display = 'block';
-            if (score > bestScore) { bestScore = score; localStorage.setItem('down100-best', bestScore); }
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('down100-best', bestScore);
+                document.getElementById('best').textContent = bestScore;
+            }
         }
 
         function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
 
+        // Keyboard
         document.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault(); });
         document.addEventListener('keyup', e => { keys[e.key] = false; e.preventDefault(); });
 
@@ -237,7 +278,8 @@
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
             const rect = canvas.getBoundingClientRect();
-            for (const t of e.changedTouches) {
+            touchLeft = false; touchRight = false;
+            for (const t of e.touches) {
                 if (t.clientX < rect.left + rect.width / 2) touchLeft = true;
                 else touchRight = true;
             }
@@ -261,7 +303,7 @@
             }
         });
 
-        // Merge touch into keys in update
+        // Merge touch state into keys before each update
         const origUpdate = update;
         update = function() {
             if (touchLeft) keys['ArrowLeft'] = true; else delete keys['ArrowLeft'];

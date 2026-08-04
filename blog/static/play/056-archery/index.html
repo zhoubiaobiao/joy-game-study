@@ -31,7 +31,7 @@
     </div>
     <div class="canvas-wrap"><canvas id="game"></canvas></div>
     <div class="btn-row"><button class="btn primary" id="newBtn">🔄 新游戏</button></div>
-    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 从弓向上拖拽瞄准靶心，松开发射 | 向上拖=箭向上飞 | 靶心=10分 | 10支箭挑战</div>
+    <div class="info" style="color:#555;font-size:0.7em;margin-top:4px;">💡 从弓向上拖拽瞄准靶心，松开发射！向上拖=箭向上飞 | 靶心=10分 | 10支箭挑战</div>
     <div class="overlay" id="endOverlay">
         <h2>🏹 箭已射完！</h2>
         <p>总分：<strong id="endScore">0</strong> | 10环次数：<strong id="endBull">0</strong></p>
@@ -41,7 +41,7 @@
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         let W, H, bow, arrows, target, score, bestScore, gameOver, animId;
-        let dragging, dragStart, particles, arrowsLeft, bullCount, checkTimer;
+        let dragging, dragPos, particles, arrowsLeft, bullCount, checkTimer;
 
         function resize() {
             const maxW = Math.min(canvas.parentElement.clientWidth, 400);
@@ -54,16 +54,18 @@
             if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
             resize();
             score = 0; gameOver = false; arrowsLeft = 10; bullCount = 0;
-            dragging = false; particles = [];
+            dragging = false; dragPos = null; particles = [];
             bestScore = parseInt(localStorage.getItem('archery-best') || '0');
             document.getElementById('score').textContent = '0';
             document.getElementById('arrows').textContent = '10';
             document.getElementById('best').textContent = bestScore;
             document.getElementById('endOverlay').style.display = 'none';
-            bow = { x: W/2, y: H - 65 };
+            // Bow at bottom center
+            bow = { x: W/2, y: H - 65, r: 45 };
             arrows = [];
-            target = { x: W/2, y: H * 0.28, r: 65, angle: 0, rotSpeed: 0.008 + Math.random() * 0.012, dir: Math.random() > 0.5 ? 1 : -1 };
-            target.rotSpeed *= target.dir;
+            // Target at top
+            target = { x: W/2, y: H * 0.28, r: 60, angle: 0, rotSpeed: 0.008 + Math.random() * 0.012 };
+            target.rotSpeed *= (Math.random() > 0.5 ? 1 : -1);
             loop();
         }
 
@@ -75,10 +77,12 @@
             for (const a of arrows) {
                 if (a.stuck) continue;
                 a.x += a.vx; a.y += a.vy;
-                a.vy += 0.15; // slight gravity
+                a.vy += 0.06; // gentle gravity for realistic arc
                 a.rot = Math.atan2(a.vy, a.vx);
-                // Trail
-                particles.push({ x: a.x, y: a.y, vx: 0, vy: 0, life: 4, color: '#8B4513' });
+                // Trail particle
+                if (Math.random() < 0.6) {
+                    particles.push({ x: a.x, y: a.y, vx: 0, vy: 0, life: 5, color: '#8B4513' });
+                }
                 // Hit target
                 if (!a.stuck && Math.hypot(a.x - target.x, a.y - target.y) < target.r + 5) {
                     a.stuck = true;
@@ -88,17 +92,16 @@
                     if (ringScore === 10) bullCount++;
                     document.getElementById('score').textContent = score;
                     if (score > bestScore) { bestScore = score; localStorage.setItem('archery-best', bestScore); document.getElementById('best').textContent = bestScore; }
-                    // Particles
-                    for (let i = 0; i < 6; i++) {
-                        particles.push({ x: a.x, y: a.y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: 15, color: ringScore >= 8 ? '#ffd700' : '#fff' });
+                    // Hit particles
+                    for (let i = 0; i < 8; i++) {
+                        particles.push({ x: a.x, y: a.y, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 18, color: ringScore >= 8 ? '#ffd700' : '#fff' });
                     }
-                    // Show score popup
                     a.popup = ringScore;
-                    a.popupLife = 30;
+                    a.popupLife = 35;
                 }
             }
             // Remove off-screen arrows
-            arrows = arrows.filter(a => a.stuck || (a.y > -50 && a.y < H + 50 && a.x > -50 && a.x < W + 50));
+            arrows = arrows.filter(a => a.stuck || (a.y > -60 && a.y < H + 60 && a.x > -60 && a.x < W + 60));
             // Particles
             for (const p of particles) { p.life--; }
             particles = particles.filter(p => p.life > 0);
@@ -110,19 +113,20 @@
             ctx.clearRect(0, 0, W, H);
             // Sky + grass background
             const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
-            skyGrad.addColorStop(0, '#87CEEB'); skyGrad.addColorStop(0.55, '#90d0f0'); skyGrad.addColorStop(0.55, '#4a8c2a'); skyGrad.addColorStop(1, '#2d5a1e');
+            skyGrad.addColorStop(0, '#87CEEB'); skyGrad.addColorStop(0.52, '#90d0f0');
+            skyGrad.addColorStop(0.52, '#4a8c2a'); skyGrad.addColorStop(1, '#2d5a1e');
             ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, H);
 
             // Target stand
-            ctx.fillStyle = '#8B4513'; ctx.fillRect(target.x - 3, target.y + target.r, 6, H * 0.55 - target.y - target.r);
-            ctx.fillStyle = '#A0522D'; ctx.fillRect(target.x - 2, target.y + target.r, 6, H * 0.55 - target.y - target.r);
+            const standTop = target.y + target.r;
+            const standBot = Math.min(H * 0.52, H - 20);
+            ctx.fillStyle = '#8B4513'; ctx.fillRect(target.x - 3, standTop, 6, standBot - standTop);
             // Target legs
-            ctx.fillStyle = '#6B3410'; ctx.fillRect(target.x - 8, target.y + target.r + 3, 16, 4);
+            ctx.fillStyle = '#6B3410'; ctx.fillRect(target.x - 9, standTop + 4, 18, 4);
 
-            // Target
+            // Target with rotating rings
             ctx.save(); ctx.translate(target.x, target.y);
             ctx.rotate(target.angle);
-            // Rings
             const rings = [
                 { r: target.r, color: '#fff' },
                 { r: target.r * 0.8, color: '#000' },
@@ -133,94 +137,171 @@
             ];
             for (const ring of rings) {
                 ctx.fillStyle = ring.color; ctx.beginPath(); ctx.arc(0, 0, ring.r, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
                 ctx.beginPath(); ctx.arc(0, 0, ring.r, 0, Math.PI*2); ctx.stroke();
             }
-            // Cross lines on target
-            ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+            // Cross lines
+            ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(-target.r, 0); ctx.lineTo(target.r, 0); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(0, -target.r); ctx.lineTo(0, target.r); ctx.stroke();
             ctx.restore();
 
-            // Particles
+            // Particles (drawn behind bow)
             for (const p of particles) {
-                ctx.fillStyle = `rgba(${p.color === '#ffd700' ? '255,215,0' : '200,200,200'},${p.life/(p.color==='#ffd700'?15:4)})`;
+                const alpha = p.life / 18;
+                ctx.fillStyle = p.color === '#ffd700'
+                    ? `rgba(255,215,0,${alpha})`
+                    : p.color === '#fff'
+                    ? `rgba(255,255,255,${alpha})`
+                    : `rgba(139,69,19,${alpha})`;
                 ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
             }
 
-            // Stuck arrows
+            // Stuck arrows on target
             for (const a of arrows) {
                 if (!a.stuck) continue;
                 ctx.save(); ctx.translate(a.x, a.y);
                 ctx.rotate(a.rot || 0);
                 // Shaft
-                ctx.fillStyle = '#8B4513'; ctx.fillRect(-1, -18, 2, 36);
-                // Feather
-                ctx.fillStyle = '#ff4444'; ctx.fillRect(-4, -18, 8, 6);
-                ctx.fillStyle = '#ffd700'; ctx.fillRect(-3, -19, 6, 4);
+                ctx.fillStyle = '#8B4513'; ctx.fillRect(-1.5, -20, 3, 40);
+                // Feathers
+                ctx.fillStyle = '#ff4444'; ctx.fillRect(-5, -22, 10, 8);
+                ctx.fillStyle = '#ffd700'; ctx.fillRect(-4, -23, 8, 5);
                 // Tip
-                ctx.fillStyle = '#666'; ctx.beginPath(); ctx.moveTo(-3, 16); ctx.lineTo(3, 16); ctx.lineTo(0, 22); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#999'; ctx.beginPath();
+                ctx.moveTo(-3, 18); ctx.lineTo(3, 18); ctx.lineTo(0, 25); ctx.closePath(); ctx.fill();
                 ctx.restore();
                 // Score popup
                 if (a.popupLife > 0) {
-                    const alpha = a.popupLife / 30;
-                    ctx.fillStyle = `rgba(255,215,0,${alpha})`; ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
-                    ctx.fillText(a.popup + '分!', a.x, a.y - 25 - (30 - a.popupLife) * 1.2);
+                    const alpha = a.popupLife / 35;
+                    const offsetY = (35 - a.popupLife) * 1.5;
+                    ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+                    ctx.font = 'bold 16px "Segoe UI"'; ctx.textAlign = 'center';
+                    ctx.fillText(a.popup + '分!', a.x, a.y - 28 - offsetY);
                     ctx.textAlign = 'start';
                 }
             }
 
-            // Bow
+            // Bow (drawn after stuck arrows, before flying arrows)
             if (arrowsLeft > 0) {
-                const bx = bow.x, by = bow.y;
-                // Bow arc
-                ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-                ctx.beginPath(); ctx.arc(bx, by, 45, -Math.PI * 0.7, Math.PI * 0.7); ctx.stroke();
-                // Bowstring
-                if (dragging && dragStart) {
-                    const dx = dragStart.x - bx, dy = dragStart.y - by;
-                    const dist = Math.min(30, Math.hypot(dx, dy));
-                    const angle = Math.atan2(dy, dx);
-                    const pullX = bx + Math.cos(angle) * dist;
-                    const pullY = by + Math.sin(angle) * dist;
-                    // String pulled
-                    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
+                const bx = bow.x, by = bow.y, r = bow.r;
+                // Draw bow arc - smile shape (bottom half), opening upward
+                ctx.strokeStyle = '#6B3410'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.arc(bx, by, r, Math.PI, 2 * Math.PI); ctx.stroke();
+                // Inner highlight
+                ctx.strokeStyle = '#A0722A'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(bx, by, r - 2, Math.PI, 2 * Math.PI); ctx.stroke();
+
+                // Grip (center bottom of bow)
+                ctx.fillStyle = '#4a2800'; ctx.fillRect(bx - 4, by + r - 12, 8, 16);
+                ctx.fillStyle = '#8B6914'; ctx.fillRect(bx - 3, by + r - 11, 6, 14);
+
+                const leftX = bx + Math.cos(Math.PI) * r;   // bx - r
+                const leftY = by + Math.sin(Math.PI) * r;   // by
+                const rightX = bx + Math.cos(2*Math.PI) * r; // bx + r
+                const rightY = by + Math.sin(2*Math.PI) * r; // by
+
+                if (dragging && dragPos) {
+                    // Pull direction from bow center to drag point
+                    const dx = dragPos.x - bx;
+                    const dy = dragPos.y - by;
+                    const dist = Math.hypot(dx, dy);
+                    const pullAngle = Math.atan2(dy, dx);
+                    // Clamp pull distance
+                    const pullDist = Math.min(r * 0.7, dist);
+                    // Pull point (where string is pulled to)
+                    const px = bx + Math.cos(pullAngle) * pullDist;
+                    const py = by + Math.sin(pullAngle) * pullDist;
+
+                    // Draw bowstring pulled to drag point (V shape)
+                    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    ctx.moveTo(bx + Math.cos(-Math.PI * 0.7) * 45, by + Math.sin(-Math.PI * 0.7) * 45);
-                    ctx.lineTo(pullX, pullY);
-                    ctx.lineTo(bx + Math.cos(Math.PI * 0.7) * 45, by + Math.sin(Math.PI * 0.7) * 45);
+                    ctx.moveTo(leftX, leftY);
+                    ctx.lineTo(px, py);
+                    ctx.lineTo(rightX, rightY);
                     ctx.stroke();
-                    // Arrow preview (shows trajectory direction)
-                    ctx.setLineDash([5, 5]);
-                    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
+
+                    // Arrow direction: same as drag direction (drag up → shoot up)
+                    const shootAngle = pullAngle;
+                    const power = pullDist / (r * 0.7);
+                    const arrowLen = 40 + power * 40;
+
+                    // Trajectory preview (dashed line in shoot direction)
+                    ctx.setLineDash([6, 6]);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
                     ctx.beginPath(); ctx.moveTo(bx, by);
-                    ctx.lineTo(bx + Math.cos(angle) * 70, by + Math.sin(angle) * 70);
+                    ctx.lineTo(bx + Math.cos(shootAngle) * arrowLen, by + Math.sin(shootAngle) * arrowLen);
                     ctx.stroke();
                     ctx.setLineDash([]);
+
                     // Arrow shaft preview
                     ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 3;
                     ctx.beginPath(); ctx.moveTo(bx, by);
-                    ctx.lineTo(bx + Math.cos(angle) * 50, by + Math.sin(angle) * 50);
+                    ctx.lineTo(bx + Math.cos(shootAngle) * (arrowLen * 0.7), by + Math.sin(shootAngle) * (arrowLen * 0.7));
                     ctx.stroke();
-                    // Power indicator
-                    const power = Math.min(1, dist / 30);
-                    ctx.fillStyle = '#333'; ctx.fillRect(bx - 30, by - 55, 60, 8);
-                    const powerColor = power < 0.5 ? '#44ff44' : power < 0.8 ? '#ffd700' : '#ff4444';
-                    ctx.fillStyle = powerColor; ctx.fillRect(bx - 30, by - 55, 60 * power, 8);
+                    // Arrow tip preview
+                    const tipX = bx + Math.cos(shootAngle) * (arrowLen * 0.7);
+                    const tipY = by + Math.sin(shootAngle) * (arrowLen * 0.7);
+                    ctx.fillStyle = '#999'; ctx.beginPath();
+                    ctx.arc(tipX, tipY, 3, 0, Math.PI*2); ctx.fill();
+
+                    // Power bar
+                    const barW = 60, barH = 6;
+                    ctx.fillStyle = '#333'; ctx.fillRect(bx - barW/2, by - r - 18, barW, barH);
+                    const powerColor = power < 0.4 ? '#44ff44' : power < 0.75 ? '#ffd700' : '#ff4444';
+                    ctx.fillStyle = powerColor; ctx.fillRect(bx - barW/2, by - r - 18, barW * power, barH);
+                    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+                    ctx.strokeRect(bx - barW/2, by - r - 18, barW, barH);
+
+                    // Arrow nocked on the pulled string
+                    // Draw a small arrow at bow center pointing in shoot direction
+                    const nockLen = 18;
+                    ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.moveTo(bx, by);
+                    ctx.lineTo(bx + Math.cos(shootAngle) * nockLen, by + Math.sin(shootAngle) * nockLen);
+                    ctx.stroke();
                 } else {
-                    // String at rest
-                    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
+                    // String at rest (straight across top of arc)
+                    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2.5;
                     ctx.beginPath();
-                    ctx.moveTo(bx + Math.cos(-Math.PI * 0.7) * 45, by + Math.sin(-Math.PI * 0.7) * 45);
-                    ctx.lineTo(bx, by);
-                    ctx.lineTo(bx + Math.cos(Math.PI * 0.7) * 45, by + Math.sin(Math.PI * 0.7) * 45);
+                    ctx.moveTo(leftX, leftY);
+                    ctx.lineTo(rightX, rightY);
                     ctx.stroke();
+
+                    // Arrow at rest (pointing up from bow center)
+                    const arrowLen = 25;
+                    ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 2.5;
+                    ctx.beginPath(); ctx.moveTo(bx, by);
+                    ctx.lineTo(bx, by - arrowLen);
+                    ctx.stroke();
+                    // Arrow tip
+                    ctx.fillStyle = '#999'; ctx.beginPath();
+                    ctx.moveTo(bx - 3, by - arrowLen + 5);
+                    ctx.lineTo(bx + 3, by - arrowLen + 5);
+                    ctx.lineTo(bx, by - arrowLen - 3);
+                    ctx.closePath(); ctx.fill();
                 }
             }
 
+            // Flying arrows (drawn on top of bow)
+            for (const a of arrows) {
+                if (a.stuck) continue;
+                ctx.save(); ctx.translate(a.x, a.y);
+                ctx.rotate(a.rot || 0);
+                // Shaft
+                ctx.fillStyle = '#8B4513'; ctx.fillRect(-1, -16, 2, 32);
+                // Feathers
+                ctx.fillStyle = '#ff4444'; ctx.fillRect(-3, -18, 6, 7);
+                ctx.fillStyle = '#ffd700'; ctx.fillRect(-2, -19, 4, 4);
+                // Tip
+                ctx.fillStyle = '#999'; ctx.beginPath();
+                ctx.moveTo(-2, 14); ctx.lineTo(2, 14); ctx.lineTo(0, 20); ctx.closePath(); ctx.fill();
+                ctx.restore();
+            }
+
             // UI
-            ctx.fillStyle = '#333'; ctx.font = 'bold 14px "Segoe UI"'; ctx.textAlign = 'center';
-            ctx.fillText('🏹 剩余: ' + arrowsLeft + ' 支', W/2, H - 15);
+            ctx.fillStyle = '#333'; ctx.font = 'bold 13px "Segoe UI"'; ctx.textAlign = 'center';
+            ctx.fillText('🏹 剩余: ' + arrowsLeft + ' 支', W/2, H - 12);
             ctx.textAlign = 'start';
         }
 
@@ -232,82 +313,97 @@
             if (score > bestScore) { bestScore = score; localStorage.setItem('archery-best', bestScore); }
         }
 
-        function shootArrow(fromX, fromY, toX, toY) {
-            if (arrowsLeft <= 0) return;
-            const dx = toX - fromX, dy = toY - fromY;
-            const dist = Math.min(30, Math.hypot(dx, dy));
-            // Arrow shoots in the direction of the drag (from bow toward drag point)
-            const angle = Math.atan2(dy, dx);
-            const power = dist / 30;
-            const speed = 8 + power * 7;
+        function shootArrow() {
+            if (arrowsLeft <= 0 || !dragPos) return;
+            const bx = bow.x, by = bow.y;
+            const dx = dragPos.x - bx;
+            const dy = dragPos.y - by;
+            const dist = Math.hypot(dx, dy);
+
+            // Arrow shoots in drag direction. If no drag (tap), shoot straight up.
+            const shootAngle = dist < 5 ? -Math.PI / 2 : Math.atan2(dy, dx);
+            const power = Math.min(1, dist / (bow.r * 0.7));
+            const speed = 7 + power * 8; // speed range: 7-15
+
             arrows.push({
-                x: fromX, y: fromY,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                rot: angle, stuck: false
+                x: bx, y: by,
+                vx: Math.cos(shootAngle) * speed,
+                vy: Math.sin(shootAngle) * speed,
+                rot: shootAngle, stuck: false
             });
             arrowsLeft--;
             document.getElementById('arrows').textContent = arrowsLeft;
+
             if (arrowsLeft <= 0) {
-                // Check after last arrow lands, retry if still in flight
                 function checkDone() {
                     if (gameOver) return;
-                    if (arrows.every(a => a.stuck || a.y > H || a.x < -50 || a.x > W + 50)) {
-                        endGame();
-                    } else {
-                        checkTimer = setTimeout(checkDone, 500);
-                    }
+                    const allDone = arrows.every(a => a.stuck || a.y > H + 50 || a.x < -50 || a.x > W + 50);
+                    if (allDone) { endGame(); }
+                    else { checkTimer = setTimeout(checkDone, 400); }
                 }
-                checkTimer = setTimeout(checkDone, 1500);
+                checkTimer = setTimeout(checkDone, 1200);
             }
         }
 
         function loop() { update(); draw(); if (!gameOver) animId = requestAnimationFrame(loop); }
 
+        function getCanvasPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: (e.clientX - rect.left) * (W / rect.width),
+                y: (e.clientY - rect.top) * (H / rect.height)
+            };
+        }
+
         canvas.addEventListener('mousedown', e => {
             if (gameOver || arrowsLeft <= 0) return;
-            const rect = canvas.getBoundingClientRect();
-            const mx = (e.clientX - rect.left) * (W / rect.width);
-            const my = (e.clientY - rect.top) * (H / rect.height);
-            if (Math.abs(mx - bow.x) < 60 && Math.abs(my - bow.y) < 60) {
+            const pos = getCanvasPos(e);
+            // Check if touch is near bow area
+            if (Math.abs(pos.x - bow.x) < 70 && Math.abs(pos.y - bow.y) < 70) {
                 dragging = true;
-                dragStart = { x: mx, y: my };
+                dragPos = pos;
             }
         });
         canvas.addEventListener('mousemove', e => {
             if (!dragging) return;
-            const rect = canvas.getBoundingClientRect();
-            dragStart.x = (e.clientX - rect.left) * (W / rect.width);
-            dragStart.y = (e.clientY - rect.top) * (H / rect.height);
+            dragPos = getCanvasPos(e);
         });
         canvas.addEventListener('mouseup', e => {
-            if (!dragging || !dragStart) return;
-            shootArrow(bow.x, bow.y, dragStart.x, dragStart.y);
-            dragging = false; dragStart = null;
+            if (!dragging || !dragPos) return;
+            shootArrow();
+            dragging = false; dragPos = null;
         });
+        canvas.addEventListener('mouseleave', e => {
+            if (!dragging) return;
+            shootArrow();
+            dragging = false; dragPos = null;
+        });
+
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
             if (gameOver || arrowsLeft <= 0) return;
-            const rect = canvas.getBoundingClientRect();
-            const mx = (e.touches[0].clientX - rect.left) * (W / rect.width);
-            const my = (e.touches[0].clientY - rect.top) * (H / rect.height);
-            if (Math.abs(mx - bow.x) < 60 && Math.abs(my - bow.y) < 60) {
+            const pos = getCanvasPos(e.touches[0]);
+            if (Math.abs(pos.x - bow.x) < 70 && Math.abs(pos.y - bow.y) < 70) {
                 dragging = true;
-                dragStart = { x: mx, y: my };
+                dragPos = pos;
             }
         });
         canvas.addEventListener('touchmove', e => {
             e.preventDefault();
             if (!dragging) return;
-            const rect = canvas.getBoundingClientRect();
-            dragStart.x = (e.touches[0].clientX - rect.left) * (W / rect.width);
-            dragStart.y = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            dragPos = getCanvasPos(e.touches[0]);
         });
         canvas.addEventListener('touchend', e => {
             e.preventDefault();
-            if (!dragging || !dragStart) return;
-            shootArrow(bow.x, bow.y, dragStart.x, dragStart.y);
-            dragging = false; dragStart = null;
+            if (!dragging || !dragPos) return;
+            shootArrow();
+            dragging = false; dragPos = null;
+        });
+        canvas.addEventListener('touchcancel', e => {
+            e.preventDefault();
+            if (!dragging) return;
+            shootArrow();
+            dragging = false; dragPos = null;
         });
 
         document.getElementById('newBtn').addEventListener('click', newGame);
