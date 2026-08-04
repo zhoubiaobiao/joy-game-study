@@ -190,13 +190,14 @@
                     ctx.lineTo(pullX, pullY);
                     ctx.lineTo(bx + Math.cos(Math.PI * 0.7) * 45, by + Math.sin(Math.PI * 0.7) * 45);
                     ctx.stroke();
-                    // Arrow preview
+                    // Arrow preview (pointing OPPOSITE to drag - toward target)
+                    const shootAngle = Math.atan2(-dy, -dx);
                     ctx.strokeStyle = '#8B4513'; ctx.lineWidth = 3;
                     ctx.beginPath(); ctx.moveTo(pullX, pullY);
-                    ctx.lineTo(pullX + Math.cos(angle) * 40, pullY + Math.sin(angle) * 40);
+                    ctx.lineTo(pullX + Math.cos(shootAngle) * 40, pullY + Math.sin(shootAngle) * 40);
                     ctx.stroke();
                     // Arrow tip
-                    ctx.fillStyle = '#666'; ctx.beginPath(); ctx.arc(pullX + Math.cos(angle) * 40, pullY + Math.sin(angle) * 40, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#666'; ctx.beginPath(); ctx.arc(pullX + Math.cos(shootAngle) * 40, pullY + Math.sin(shootAngle) * 40, 4, 0, Math.PI*2); ctx.fill();
                     // Power indicator
                     const power = Math.min(1, dist / 30);
                     ctx.fillStyle = '#333'; ctx.fillRect(bx - 30, by - 55, 60, 8);
@@ -231,14 +232,15 @@
             if (arrowsLeft <= 0) return;
             const dx = toX - fromX, dy = toY - fromY;
             const dist = Math.min(30, Math.hypot(dx, dy));
-            const angle = Math.atan2(dy, dx);
+            // Arrow shoots OPPOSITE to drag direction (like pulling a bowstring)
+            const shootAngle = Math.atan2(-dy, -dx);
             const power = dist / 30;
             const speed = 8 + power * 7;
             arrows.push({
                 x: fromX, y: fromY,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                rot: angle, stuck: false
+                vx: Math.cos(shootAngle) * speed,
+                vy: Math.sin(shootAngle) * speed,
+                rot: shootAngle, stuck: false
             });
             arrowsLeft--;
             document.getElementById('arrows').textContent = arrowsLeft;
